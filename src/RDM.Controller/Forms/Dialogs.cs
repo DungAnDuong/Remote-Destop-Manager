@@ -183,7 +183,20 @@ public sealed class LoginForm : DialogBase
     private readonly ModernInput _pass = new ModernInput(null, true);
     private readonly ModernInput _pass2;
     private readonly ModernInput _fullName;
+    private readonly CheckBox _remember;
     private readonly bool _setup;
+
+    /// <summary>Thông tin đăng nhập vừa nhập, để nơi gọi lưu lại nếu người dùng chọn Remember password.</summary>
+    public string EnteredUser { get; private set; }
+    public string EnteredPassword { get; private set; }
+    public bool Remember => _remember != null && _remember.Checked;
+
+    /// <summary>Điền sẵn tài khoản đã nhớ; có mật khẩu thì tự tích ô Remember.</summary>
+    public void Prefill(string user, string pass)
+    {
+        _user.Text = user ?? string.Empty;
+        if (_remember != null && !string.IsNullOrEmpty(pass)) { _pass.Text = pass; _remember.Checked = true; }
+    }
 
     public LoginForm(RdmRuntime rt) : base(Ui.AppTitle, rt.Users.HasAnyUser() ? "Sign In" : "Create Account")
     {
@@ -200,7 +213,12 @@ public sealed class LoginForm : DialogBase
             AddField("Password", _pass, $"At least {PasswordPolicy.MinLength} characters. This is an RDM password, not your Windows password.");
             _pass2 = AddField("Confirm password", new ModernInput(null, true));
         }
-        else AddField("Password", _pass);
+        else
+        {
+            AddField("Password", _pass);
+            _remember = Ui.Check("Remember password");
+            Fields.Controls.Add(_remember);
+        }
         CancelBtn.Text = "Exit";
     }
 
@@ -214,9 +232,16 @@ public sealed class LoginForm : DialogBase
             await Task.Run(() => _rt.Users.CreateFirstAdministrator(user, pass, string.IsNullOrWhiteSpace(fullName) ? null : fullName));
         }
         var outcome = await Task.Run(() => _rt.Users.Login(user, pass));
+        if (outcome == LoginOutcome.Success)
+        {
+            EnteredUser = user;
+            EnteredPassword = pass;
+            _pass.Text = string.Empty;
+            if (_pass2 != null) _pass2.Text = string.Empty;
+            return true;
+        }
         _pass.Text = string.Empty;
         if (_pass2 != null) _pass2.Text = string.Empty;
-        if (outcome == LoginOutcome.Success) return true;
         // Một thông báo chung, không tiết lộ tài khoản có tồn tại hay đang bị khóa.
         throw new ValidationException($"Incorrect username or password, or the account is temporarily locked ({UserService.LockoutDuration.TotalMinutes:0} minutes after {UserService.MaxFailedAttempts} failed attempts).");
     }

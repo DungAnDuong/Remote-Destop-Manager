@@ -64,8 +64,9 @@ public sealed class HostSession
     }
 
     /// <summary>
-    /// Chủ máy ngắt: báo cho Controller biết đây là chủ ý để nó KHÔNG tự kết nối lại, rồi đóng ngay.
-    /// Đóng không phụ thuộc việc báo có tới nơi hay không: chỉ chờ tối đa một giây.
+    /// Chủ máy ngắt: báo cho Controller biết đây là chủ ý để nó KHÔNG tự kết nối lại.
+    /// Gửi khung xong thì chờ ngắn để Controller đọc được và tự đóng trước (đóng nhẹ nhàng, tránh RST làm mất khung);
+    /// nếu nó không đóng kịp thì tự đóng sau tối đa chừng ấy thời gian. Việc chặn kết nối mới đã có hiệu lực ngay ở DisconnectAll.
     /// </summary>
     public void DisconnectByOwner()
     {
@@ -75,6 +76,8 @@ public sealed class HostSession
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
                 await _channel.SendAsync(SessionMessage.Disconnect, Wire.Build(w => w.Str("The computer's owner ended the session.")), timeout.Token).ConfigureAwait(false);
+                // Nếu bên kia đóng trước (đã nhận khung) thì vòng nhận gặp EOF và phiên kết thúc sớm hơn mốc này.
+                await Task.Delay(TimeSpan.FromMilliseconds(600)).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException || ex is ObjectDisposedException || ex is OperationCanceledException || ex is SocketException) { }
             finally { Cancel(); }

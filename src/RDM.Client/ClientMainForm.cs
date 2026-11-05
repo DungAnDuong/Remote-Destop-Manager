@@ -26,7 +26,13 @@ public sealed class AllowControlPanel : UserControl
     private readonly DeviceInfo _info;
     private readonly SessionManager _sessions;
     private readonly ModernButton _disconnectAll = new ModernButton("Disconnect All") { Enabled = false };
-    private SessionIndicator _indicator;
+    private string _controllingUser;
+
+    /// <summary>Phát khi phiên điều khiển bắt đầu (tên người điều khiển) hoặc kết thúc (null), để biểu tượng khay cập nhật.</summary>
+    public event Action<string> ControllerChanged;
+
+    /// <summary>Ngắt mọi phiên đang điều khiển máy này; dùng cho menu của biểu tượng khay.</summary>
+    public void DisconnectAll() => _sessions.DisconnectAll();
 
     private readonly Label _remoteId = new Label { AutoSize = true, UseMnemonic = false };
     private readonly Label _status = new Label { AutoSize = true, UseMnemonic = false };
@@ -62,7 +68,7 @@ public sealed class AllowControlPanel : UserControl
         _sessions.Changed -= OnConnectionChanged;
         _sessions.AskOwner = null;
         _sessions.Dispose();
-        _indicator?.Dispose();
+        ControllerChanged?.Invoke(null);
     }
 
     private void BuildUi()
@@ -254,17 +260,13 @@ public sealed class AllowControlPanel : UserControl
         catch (System.Net.Sockets.SocketException) { _log.Write($"Could not open port {_state.SessionPort} for incoming connections"); }
     }
 
-    /// <summary>Biểu tượng khay hệ thống luôn hiện khi có phiên: chủ máy luôn biết và luôn ngắt được. Không có cấu hình nào tắt được biểu tượng này.</summary>
+    /// <summary>Báo trạng thái phiên cho biểu tượng khay của cửa sổ chính (chủ máy vẫn luôn thấy và ngắt được qua khay).</summary>
     private void UpdateSessionBar(IReadOnlyList<HostSession> sessions)
     {
-        if (sessions.Count == 0)
-        {
-            _indicator?.Dispose();
-            _indicator = null;
-            return;
-        }
-        if (_indicator == null) _indicator = new SessionIndicator(_sessions);
-        _indicator.SetController(sessions[0].ControllerUser);
+        var user = sessions.Count == 0 ? null : sessions[0].ControllerUser;
+        if (user == _controllingUser) return;
+        _controllingUser = user;
+        ControllerChanged?.Invoke(user);
     }
 
     /// <summary>Hỏi chủ máy; không trả lời trong thời gian quy định thì coi là từ chối.</summary>
@@ -392,59 +394,6 @@ public sealed class ApprovalDialog : Form
     private void UpdateCountdown() => _countdown.Text = $"Automatically rejected in {_left} seconds. Only accept if you know this person.";
 }
 
-/// <summary>
-/// Biểu tượng ở khay hệ thống (cạnh đồng hồ) báo đang có phiên điều khiển, thay cho thanh đỏ trên màn hình.
-/// Chủ máy vẫn luôn được báo: bong bóng thông báo khi phiên bắt đầu, và luôn ngắt được qua menu chuột phải.
-/// Đây là yêu cầu minh bạch, không phải tùy chọn: không có cấu hình nào tắt biểu tượng này.
-/// </summary>
-public sealed class SessionIndicator : IDisposable
-{
-    private readonly SessionManager _sessions;
-    private readonly NotifyIcon _icon;
-    private readonly ToolStripMenuItem _header;
-    private string _controller;
-
-    public SessionIndicator(SessionManager sessions)
-    {
-        _sessions = sessions;
-        var menu = new ContextMenuStrip();
-        _header = new ToolStripMenuItem("A remote session is active") { Enabled = false };
-        menu.Items.Add(_header);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Disconnect Now", null, (s, e) => _sessions.DisconnectAll());
-        _icon = new NotifyIcon
-        {
-            Icon = Theme.AppIcon,
-            Visible = true,
-            Text = "RDM: a remote session is active",
-            ContextMenuStrip = menu
-        };
-        // Bấm trái vào biểu tượng thì nhắc lại ai đang điều khiển; bấm phải ra menu ngắt.
-        _icon.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowBalloon(); };
-    }
-
-    public void SetController(string user)
-    {
-        if (user == _controller) return;
-        var first = _controller == null;
-        _controller = user;
-        _header.Text = "Being controlled by: " + user;
-        _icon.Text = Trunc("RDM: being controlled by " + user);
-        if (first) ShowBalloon();
-    }
-
-    private void ShowBalloon() => _icon.ShowBalloonTip(5000, "RDM",
-        "Your computer is being controlled by " + (_controller ?? "another user") + ". Right-click this icon to disconnect.", ToolTipIcon.Warning);
-
-    // Chú thích khay tối đa 63 ký tự.
-    private static string Trunc(string s) => s.Length <= 63 ? s : s.Substring(0, 60) + "...";
-
-    public void Dispose()
-    {
-        _icon.Visible = false;
-        _icon.Dispose();
-    }
-}
 
 public sealed class AccessPasswordDialog : ClientDialog
 {
@@ -504,21 +453,17 @@ public sealed class ClientSettingsDialog : ClientDialog
             _host.Text = state.RelayHost;
             _port.Text = state.RelayPort.ToString();
             _pin.Text = state.RelayPin;
+            // Cổng kết nối trực tiếp chỉ hiện ở bản không đóng gói; bản phát hành dùng cổng mặc định, không cho đổi.
+            Field("Port for direct connections", _sessionPort, "The firewall must allow this port. Changing it requires restarting RDM.");
+            _sessionPort.Text = state.SessionPort.ToString();
         }
-        Field("Port for direct connections", _sessionPort, "The firewall must allow this port. Changing it requires restarting RDM.");
-        _sessionPort.Text = state.SessionPort.ToString();
         _startup = new CheckBox { Text = "Start with Windows", AutoSize = true, Font = Theme.Font(9.5f), ForeColor = Theme.Text, BackColor = Color.Transparent, Checked = startup.IsEnabled };
         Fields.Controls.Add(_startup);
     }
 
     protected override Task<bool> AcceptAsync()
     {
-        if (RDM.Shared.Common.ProductMode.Managed)
-        {
-            if (!int.TryParse(_sessionPort.Text, out var directPort) || directPort < 1 || directPort > 65535) throw new ClientValidationException("The connection port must be between 1 and 65535.");
-            _state.SessionPort = directPort;
-            return Task.FromResult(true);
-        }
+        if (RDM.Shared.Common.ProductMode.Managed) return Task.FromResult(true);
         var host = _host.Text.Trim();
         if (host.Length > 0 && Uri.CheckHostName(host) == UriHostNameType.Unknown) throw new ClientValidationException("Invalid Relay address.");
         if (!int.TryParse(_port.Text, out var port) || port < 1 || port > 65535) throw new ClientValidationException("Port must be between 1 and 65535.");

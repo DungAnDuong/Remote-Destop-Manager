@@ -28,6 +28,10 @@ public sealed class HomeForm : Form
     private readonly ModernButton _manage = new ModernButton("Device Management (sign-in required)");
     private readonly GridView<ConnectionRecord> _recent = new GridView<ConnectionRecord>();
     private MainForm _management;
+    private readonly NotifyIcon _tray = new NotifyIcon { Visible = true };
+    private readonly ContextMenuStrip _trayMenu = new ContextMenuStrip();
+    private ToolStripMenuItem _trayStatus, _trayDisconnect;
+    private bool _exiting;
 
     public HomeForm(RdmRuntime rt, AllowControlPanel allow)
     {
@@ -68,13 +72,70 @@ public sealed class HomeForm : Form
             await RefreshRecentAsync();
         };
         SessionRegistry.Changed += OnSessionsChanged;
+        BuildTray();
+        _allow.ControllerChanged += OnControllerChanged;
+        // Đóng cửa sổ chỉ thu nhỏ xuống khay; thoát hẳn qua menu Exit của biểu tượng khay.
         FormClosing += (s, e) =>
         {
+            if (!_exiting && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                HideToTray();
+                return;
+            }
             SessionRegistry.CloseAll();
             _management?.Close();
             _allow.Shutdown();
+            _tray.Visible = false;
+            _tray.Dispose();
         };
         FormClosed += (s, e) => SessionRegistry.Changed -= OnSessionsChanged;
+    }
+
+    private void BuildTray()
+    {
+        _trayStatus = new ToolStripMenuItem("RDM is running") { Enabled = false };
+        _trayMenu.Items.Add(_trayStatus);
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add("Open RDM", null, (s, e) => RestoreFromTray());
+        _trayDisconnect = new ToolStripMenuItem("Disconnect current session", null, (s, e) => _allow.DisconnectAll()) { Visible = false };
+        _trayMenu.Items.Add(_trayDisconnect);
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add("Exit", null, (s, e) => { _exiting = true; Close(); });
+
+        _tray.Icon = Theme.AppIcon;
+        _tray.Text = "RDM - Remote Desktop Manager";
+        _tray.ContextMenuStrip = _trayMenu;
+        _tray.DoubleClick += (s, e) => RestoreFromTray();
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        if (_management == null || _management.IsDisposed)
+            _tray.ShowBalloonTip(3000, "RDM", "RDM is still running here. Double-click to open it, or right-click for Exit.", ToolTipIcon.Info);
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    /// <summary>Biểu tượng khay phản ánh phiên đang điều khiển máy này, kèm lệnh ngắt. Chủ máy luôn thấy, không phải cảnh báo bật lên.</summary>
+    private void OnControllerChanged(string user)
+    {
+        if (IsDisposed) return;
+        void Apply()
+        {
+            var active = !string.IsNullOrEmpty(user);
+            _trayDisconnect.Visible = active;
+            _trayStatus.Text = active ? "Being controlled by: " + user : "RDM is running";
+            var tip = active ? "RDM - being controlled by " + user : "RDM - Remote Desktop Manager";
+            _tray.Text = tip.Length <= 63 ? tip : tip.Substring(0, 60) + "...";
+        }
+        if (IsHandleCreated && InvokeRequired) BeginInvoke(new Action(Apply)); else Apply();
     }
 
     private Control BuildControlSide()
@@ -156,8 +217,15 @@ public sealed class HomeForm : Form
             _management.Activate();
             return;
         }
+        var dataDir = System.IO.Path.GetDirectoryName(_rt.Context.DatabasePath);
         using (var login = new LoginForm(_rt))
+        {
+            var saved = RememberStore.Load(dataDir);
+            if (saved.HasValue) login.Prefill(saved.Value.user, saved.Value.pass);
             if (login.ShowDialog(this) != DialogResult.OK) return;
+            if (login.Remember) RememberStore.Save(dataDir, login.EnteredUser, login.EnteredPassword);
+            else RememberStore.Clear(dataDir);
+        }
 
         if (_rt.Session.Current?.MustChangePassword == true)
             using (var change = new ChangePasswordForm(_rt, true))

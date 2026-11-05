@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Goi MSI cua RDM (mot chuong trinh duy nhat, kieu TeamViewer), x86 va x64. Bien duoc truyen tu build\build-installer.ps1. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:fire="http://wixtoolset.org/schemas/v4/wxs/firewall"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+  <Package Name="Remote Desktop Manager" Manufacturer="RDM" Version="$(var.Version)" UpgradeCode="$(var.UpgradeCode)"
+           Scope="perMachine" Compressed="yes" InstallerVersion="500">
+    <!-- Nang cap thay the ban cu. Du lieu cua nguoi dung o LOCALAPPDATA khong thuoc goi nay nen khong bi dong toi, ca khi go cai dat. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of RDM is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="RDM.ico" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="RDM.ico" />
+
+    <PropertyRef Id="WIX_IS_NETFRAMEWORK_48_OR_LATER_INSTALLED" />
+    <Launch Condition="Installed OR WIX_IS_NETFRAMEWORK_48_OR_LATER_INSTALLED"
+            Message="RDM requires .NET Framework 4.8. Install .NET Framework 4.8 from Microsoft, then run this setup again." />
+    <!-- Windows Installer bao VersionNT = 603 ca tren Windows 10, 11, Server 2016 tro len: khong bao gio so sanh voi gia tri lon hon 603. .NET 4.8 can Windows 7 SP1 tro len. Windows 8 ban dau (6.2 Client) khong duoc ho tro; Server 2012 cung la 6.2 thi duoc. -->
+    <Launch Condition="Installed OR (VersionNT = 601 AND ServicePackLevel &gt;= 1) OR (VersionNT = 602 AND MsiNTProductType &lt;&gt; 1) OR VersionNT &gt;= 603"
+            Message="This operating system is not supported. RDM requires Windows 7 SP1, Windows 8.1, Windows Server 2012 or newer." />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="APPDIR" Name="RDM" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <ComponentGroup Id="App" Directory="APPDIR">
+      <Component Id="MainExe">
+        <File Id="MainExeFile" Source="$(var.BinDir)\RDM.exe" KeyPath="yes">
+          <Shortcut Id="MenuShortcut" Directory="ProgramMenuFolder" Name="RDM" WorkingDirectory="APPDIR" Icon="RDM.ico" Advertise="yes" />
+          <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="RDM" WorkingDirectory="APPDIR" Icon="RDM.ico" Advertise="yes" />
+          <!-- May khac phai ket noi truc tiep toi duoc may nay. Chi mo cho mang Domain va Private, khong mo tren mang Public. -->
+          <fire:FirewallException Id="FwDomain" Name="RDM (Domain networks)" Profile="domain" Scope="any" />
+          <fire:FirewallException Id="FwPrivate" Name="RDM (Private networks)" Profile="private" Scope="any" />
+        </File>
+      </Component>
+      <Files Include="$(var.BinDir)\**">
+        <Exclude Files="$(var.BinDir)\RDM.exe" />
+        <Exclude Files="$(var.BinDir)\**\*.pdb" />
+        <Exclude Files="$(var.BinDir)\**\*.xml" />
+        <!-- Chi giu SQLite native dung kien truc cua goi nay. -->
+        <Exclude Files="$(var.BinDir)\$(var.OtherArch)\**" />
+      </Files>
+    </ComponentGroup>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="App" />
+    </Feature>
+  </Package>
+</Wix>

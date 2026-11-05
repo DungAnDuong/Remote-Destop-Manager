@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>RDM.Client</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RDM.Shared\RDM.Shared.csproj" />
+    <ProjectReference Include="..\RDM.UI\RDM.UI.csproj" />
+    <Reference Include="System.ServiceProcess" />
+    <!-- Chi ban Release mang Relay that; ban Debug khong bao gio dang ky len may chu that. -->
+    <EmbeddedResource Include="..\..\deploy\relay\client-defaults.txt" Condition="'$(Configuration)' == 'Release' And Exists('..\..\deploy\relay\client-defaults.txt')" LogicalName="RDM.Client.relay-defaults.txt" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>RDM.Shared</RootNamespace>
+    <!-- Mã managed thuần, không có native: để IL trung tính vì RDM.Server luôn là x64 kể cả khi build solution ở cấu hình x86.
+         Các file exe vẫn được phân phối riêng x86/x64 (Phần 2.2). -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.5.1" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageReference Include="NLog" Version="5.3.4" />
+  </ItemGroup>
+</Project>

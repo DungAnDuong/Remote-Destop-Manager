@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Bo cai .exe boc goi MSI: co giao dien, kiem tra dieu kien truoc khi cai. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Bundle Name="$(var.DisplayName)" Manufacturer="RDM" Version="$(var.Version)" UpgradeCode="$(var.BundleCode)" IconSourceFile="$(var.IconFile)">
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl="" LogoFile="$(var.LogoFile)" SuppressOptionsUI="yes" ShowVersion="yes" />
+    </BootstrapperApplication>
+
+    <?if $(var.NeedsNetFx) = "no" ?>
+    <!-- Relay Server dung .NET 10. Burn doc phien ban that cua Windows, khac voi Windows Installer. -->
+    <bal:Condition Message="RDM Relay Server requires Windows Server 2016, Windows 10 or newer." Condition="VersionNT &gt;= v10.0" />
+    <?endif?>
+    <?if $(var.NeedsNetFx) = "yes" ?>
+    <util:RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" Value="Release" Variable="NetFxRelease" Result="value" />
+    <bal:Condition Message="RDM requires .NET Framework 4.8. Install .NET Framework 4.8 from Microsoft, then run this setup again." Condition="NetFxRelease &gt;= 528040" />
+    <?endif?>
+    <?if $(var.Arch) = "x64" ?>
+    <bal:Condition Message="The x64 edition requires 64-bit Windows. Use the x86 edition instead." Condition="VersionNT64" />
+    <?endif?>
+
+    <?ifdef OldBundleA ?>
+    <!-- Ban 0.4.0 tach rieng Controller va Client: cai ban moi se tu go chung. Du lieu nguoi dung khong bi dong toi. -->
+    <RelatedBundle Id="$(var.OldBundleA)" Action="Upgrade" />
+    <RelatedBundle Id="$(var.OldBundleB)" Action="Upgrade" />
+    <?endif?>
+
+    <Chain>
+      <MsiPackage SourceFile="$(var.MsiFile)" />
+    </Chain>
+  </Bundle>
+</Wix>

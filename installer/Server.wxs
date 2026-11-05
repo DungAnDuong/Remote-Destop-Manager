@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Goi MSI cua Relay Server. Ban tu chua runtime .NET nen may chu khong can cai them. Chi co ban x64. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="RDM Relay Server" Manufacturer="RDM" Version="$(var.Version)" UpgradeCode="$(var.UpgradeCode)"
+           Scope="perMachine" Compressed="yes" InstallerVersion="500">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of RDM Relay Server is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="RDM.ico" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="RDM.ico" />
+    <!-- .NET 10 can Windows Server 2016 hoac Windows 10 tro len. Khong kiem tra o day: Windows Installer bao VersionNT = 603 ca tren Windows 10.
+         Dieu kien nam trong Bundle.wxs, vi Burn doc dung phien ban that. -->
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="RDMROOT" Name="RDM">
+        <Directory Id="APPDIR" Name="Relay Server" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="App" Directory="APPDIR">
+      <!-- Cau hinh do quan tri vien sua: nang cap khong duoc ghi de. -->
+      <Component Id="Config" NeverOverwrite="yes" Permanent="yes">
+        <File Id="ConfigFile" Source="$(var.BinDir)\appsettings.json" KeyPath="yes" />
+      </Component>
+      <Component Id="DeployGuide">
+        <File Id="DeployGuideFile" Source="$(var.GuideFile)" Name="DEPLOYMENT-GUIDE.md" KeyPath="yes" />
+      </Component>
+      <Files Include="$(var.BinDir)\**">
+        <Exclude Files="$(var.BinDir)\appsettings.json" />
+        <Exclude Files="$(var.BinDir)\**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="App" />
+    </Feature>
+  </Package>
+</Wix>

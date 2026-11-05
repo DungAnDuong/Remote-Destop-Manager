@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>RDM.Controller</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RDM.Shared\RDM.Shared.csproj" />
+    <ProjectReference Include="..\RDM.Data\RDM.Data.csproj" />
+    <ProjectReference Include="..\RDM.UI\RDM.UI.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>RDM.App</RootNamespace>
+    <AssemblyName>RDM</AssemblyName>
+    <RuntimeIdentifiers>win-x86;win-x64</RuntimeIdentifiers>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\assets\RDM.ico</ApplicationIcon>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RDM.Shared\RDM.Shared.csproj" />
+    <ProjectReference Include="..\RDM.Data\RDM.Data.csproj" />
+    <ProjectReference Include="..\RDM.UI\RDM.UI.csproj" />
+    <ProjectReference Include="..\RDM.Controller\RDM.Controller.csproj" />
+    <ProjectReference Include="..\RDM.Client\RDM.Client.csproj" />
+    <Reference Include="System.ServiceProcess" />
+  </ItemGroup>
+</Project>

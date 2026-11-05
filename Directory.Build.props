@@ -1,0 +1,17 @@
+<Project>
+  <!-- Cấu hình chung: chỉ build x86 và x64, không phân phối bằng Any CPU (Phần 2.2). -->
+  <PropertyGroup>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Platforms>x86;x64</Platforms>
+    <Configurations>Debug;Release</Configurations>
+    <PlatformTarget>$(Platform)</PlatformTarget>
+    <Company>RDM</Company>
+    <Product>Remote Desktop Manager</Product>
+    <Version>0.6.4</Version>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <NuGetAudit>true</NuGetAudit>
+  </PropertyGroup>
+</Project>

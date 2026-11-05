@@ -1,0 +1,15 @@
+.copilot-specs-cache/
+bin/
+obj/
+.vs/
+*.user
+artifacts/
+TestResults/
+*.db
+*.db-wal
+*.db-shm
+*.rdmbak
+*.bak
+*.pfx
+deploy/relay/
+.claude/settings.local.json

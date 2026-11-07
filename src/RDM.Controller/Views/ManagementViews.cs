@@ -426,7 +426,7 @@ public sealed class AboutView : ViewBase
                 "✔ Phase 3: allow remote control, device registration, Heartbeat, Online/Offline",
                 "✔ Phase 4: E2EE, Remote Desktop, mouse and keyboard over direct connections (Windows Service untested)",
                 "✔ Phase 5: data relay, Internet connections, concurrent sessions (TCP hole punching not implemented)",
-                "– Phase 6: File Transfer, Chat, Multi-Session (not implemented)",
+                "✔ Phase 6: File Transfer and Chat over the encrypted session (Multi-Session not implemented)",
                 "– Phase 7: cross-platform testing, final packaging (in progress)"
             }) flow.Controls.Add(Ui.Text(line, 9.5f, false, Theme.TextSecondary));
             flow.Controls.Add(Ui.Text(" "));

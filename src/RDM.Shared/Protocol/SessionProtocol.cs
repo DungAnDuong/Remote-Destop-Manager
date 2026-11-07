@@ -17,9 +17,15 @@ public enum SessionMessage : byte
 {
     Rekey = 1, Auth = 2, AuthResult = 3,
     ScreenInfo = 10, Frame = 11, FrameAck = 12, SetMonitor = 13, SetQuality = 14, Notice = 15,
-    Mouse = 20, Key = 21, Text = 22, SpecialKey = 23,
-    Ping = 30, Pong = 31, Disconnect = 32
+    Mouse = 20, Key = 21, Text = 22, SpecialKey = 23, Chat = 24,
+    Ping = 30, Pong = 31, Disconnect = 32,
+    FileOffer = 40, FileChunk = 41, FileEnd = 42, FileCancel = 43,
+    FsList = 44, FsListReply = 45, FsGet = 46, FileProgress = 47,
+    FsMutate = 48, FsMutateReply = 49
 }
+
+/// <summary>Thao tác thay đổi hệ thống file ở máy ở xa.</summary>
+public enum FsOp : byte { NewFolder = 1, Rename = 2, Delete = 3, Copy = 4 }
 
 public enum SessionDecline : byte { None = 0, AccessDisabled = 1, Locked = 2, BadPassword = 3, OwnerRejected = 4, Busy = 5, BadSignature = 6 }
 
@@ -52,7 +58,10 @@ public sealed class MonitorInfo
     public int Width { get; set; }
     public int Height { get; set; }
     public bool IsPrimary { get; set; }
-    public string Label => $"Monitor {Index + 1} ({Width}x{Height}{(IsPrimary ? ", primary" : "")})";
+    /// <summary>Mục tổng hợp: chụp toàn bộ các màn hình gộp lại.</summary>
+    public bool IsAll { get; set; }
+    public string ShortLabel => IsAll ? "All" : (Index + 1).ToString();
+    public string Label => IsAll ? $"All Monitors ({Width}x{Height})" : $"Monitor {Index + 1} ({Width}x{Height}{(IsPrimary ? ", primary" : "")})";
 }
 
 public sealed class FrameTile
@@ -103,7 +112,7 @@ public static class SessionWire
     public static byte[] Monitors(IReadOnlyList<MonitorInfo> list, int current) => Wire.Build(w =>
     {
         w.Write(current); w.Write(list.Count);
-        foreach (var m in list) { w.Write(m.Index); w.Write(m.X); w.Write(m.Y); w.Write(m.Width); w.Write(m.Height); w.Write(m.IsPrimary); }
+        foreach (var m in list) { w.Write(m.Index); w.Write(m.X); w.Write(m.Y); w.Write(m.Width); w.Write(m.Height); w.Write(m.IsPrimary); w.Write(m.IsAll); }
     });
 
     public static List<MonitorInfo> ReadMonitors(byte[] payload, out int current)
@@ -115,7 +124,7 @@ public static class SessionWire
             var n = r.ReadInt32();
             if (n < 0 || n > 64) throw new ProtocolException("Invalid monitor count.");
             var list = new List<MonitorInfo>(n);
-            for (var i = 0; i < n; i++) list.Add(new MonitorInfo { Index = r.ReadInt32(), X = r.ReadInt32(), Y = r.ReadInt32(), Width = r.ReadInt32(), Height = r.ReadInt32(), IsPrimary = r.ReadBoolean() });
+            for (var i = 0; i < n; i++) list.Add(new MonitorInfo { Index = r.ReadInt32(), X = r.ReadInt32(), Y = r.ReadInt32(), Width = r.ReadInt32(), Height = r.ReadInt32(), IsPrimary = r.ReadBoolean(), IsAll = r.ReadBoolean() });
             return list;
         });
         current = active;

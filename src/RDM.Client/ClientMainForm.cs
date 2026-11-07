@@ -25,8 +25,9 @@ public sealed class AllowControlPanel : UserControl
     private readonly StartupManager _startup = new StartupManager();
     private readonly DeviceInfo _info;
     private readonly SessionManager _sessions;
-    private readonly ModernButton _disconnectAll = new ModernButton("Disconnect All") { Enabled = false };
     private string _controllingUser;
+    private HostSession _hostSession;
+    private ChatWindow _chatWindow;
 
     /// <summary>Phát khi phiên điều khiển bắt đầu (tên người điều khiển) hoặc kết thúc (null), để biểu tượng khay cập nhật.</summary>
     public event Action<string> ControllerChanged;
@@ -36,10 +37,8 @@ public sealed class AllowControlPanel : UserControl
 
     private readonly Label _remoteId = new Label { AutoSize = true, UseMnemonic = false };
     private readonly Label _status = new Label { AutoSize = true, UseMnemonic = false };
-    private readonly Label _access = new Label { AutoSize = true, UseMnemonic = false };
+    private Label _deviceInfo;
     private readonly ListBox _history = new ListBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false };
-    private readonly ModernButton _unattended = new ModernButton("Enable Unattended Access");
-    private readonly ModernButton _toggleAccess = new ModernButton("Disable Remote Access");
 
     public AllowControlPanel(ClientStateStore store, ClientState state, ClientAuthentication auth, ConnectionManager connection, ActivityLog log, DeviceInfo info, SessionManager sessions)
     {
@@ -52,7 +51,6 @@ public sealed class AllowControlPanel : UserControl
         _sessions.AskOwner = AskOwnerAsync;
         _sessions.Changed += OnConnectionChanged;
         _sessions.Activity += m => { _log.Write(m); OnConnectionChanged(); };
-        _disconnectAll.Click += (s, e) => _sessions.DisconnectAll();
         Load += (s, e) =>
         {
             TryStartListening();
@@ -68,71 +66,57 @@ public sealed class AllowControlPanel : UserControl
         _sessions.Changed -= OnConnectionChanged;
         _sessions.AskOwner = null;
         _sessions.Dispose();
+        if (_hostSession != null) { _hostSession.ChatReceived -= OnHostChat; _hostSession.TransferChanged -= OnHostTransfer; _hostSession = null; }
+        _chatWindow?.Dispose();
         ControllerChanged?.Invoke(null);
     }
 
     private void BuildUi()
     {
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1, BackColor = Color.Transparent };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, Dpi.S(136)));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, Dpi.S(128)));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, Dpi.S(240)));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-        // Remote ID và trạng thái.
+        // Cửa sổ chính chỉ còn thẻ Remote ID; Thiết bị và Nhật ký được đưa vào tab ở đáy (do HomeForm tạo),
+        // còn Quyền truy cập và cấu hình nằm trong form Cài đặt (mở từ menu).
         var idCard = new Card("Allow Remote Control: This Computer's Remote ID");
+        idCard.Dock = DockStyle.Fill;
         var idFlow = Flow();
-        _remoteId.Font = Theme.Font(22f, true);
+        _remoteId.Font = Theme.Font(26f, true);
         _remoteId.ForeColor = Theme.Text;
         _remoteId.Margin = new Padding(0, 0, Dpi.S(16), 0);
         var copy = new ModernButton("Copy ID");
         copy.Click += (s, e) => { Clipboard.SetText(_state.RemoteId); };
         idFlow.Controls.Add(_remoteId);
         idFlow.Controls.Add(copy);
-        _status.Font = Theme.Font(9f);
-        _status.MaximumSize = new Size(Dpi.S(450), 0);
+        _status.Font = Theme.Font(9.5f);
+        _status.MaximumSize = new Size(Dpi.S(460), 0);
         _status.ForeColor = Theme.TextSecondary;
+        _status.Margin = new Padding(0, Dpi.S(6), 0, 0);
         idFlow.SetFlowBreak(copy, true);
         idFlow.Controls.Add(_status);
         idCard.Controls.Add(idFlow);
-        layout.Controls.Add(idCard, 0, 0);
+        Controls.Add(idCard);
 
-        // Thông tin thiết bị.
-        var infoCard = new Card("Device");
+        // Nhãn thiết bị và danh sách nhật ký chuẩn bị sẵn để HomeForm đưa vào các tab.
         var fingerprint = DeviceIdentity.Fingerprint(DeviceIdentity.FromSeed(_state.IdentitySeed).PublicKey);
-        var infoText = Text2($"Device Name:  {_info.Name}\nOperating System:  {_info.OperatingSystem} ({_info.Architecture}), {(Environment.Is64BitProcess ? "x64" : "x86")} build\nIP Address:  {_info.LocalIp ?? "–"}\nFingerprint:  {fingerprint}");
-        infoCard.Controls.Add(infoText);
-        layout.Controls.Add(infoCard, 0, 1);
-
-        // Quyền truy cập.
-        var accessCard = new Card("Access Permission");
-        var accessFlow = Flow();
-        _access.Font = Theme.Font(9f);
-        _access.ForeColor = Theme.TextSecondary;
-        _access.MaximumSize = new Size(Dpi.S(450), 0);
-        _access.Margin = new Padding(0, 0, 0, Dpi.S(8));
-        accessFlow.Controls.Add(_access);
-        accessFlow.SetFlowBreak(_access, true);
-        var changePassword = new ModernButton("Change Password");
-        changePassword.Click += async (s, e) => await ChangePasswordAsync();
-                var settings = new ModernButton("Settings");
-        settings.Click += async (s, e) => await OpenSettingsAsync();
-        _unattended.Click += (s, e) => ToggleUnattended();
-        _toggleAccess.Click += (s, e) => ToggleAccess();
-        accessFlow.Controls.AddRange(new Control[] { changePassword, _unattended, _toggleAccess, _disconnectAll, settings });
-        accessFlow.SetFlowBreak(_unattended, true);
-        accessCard.Controls.Add(accessFlow);
-        layout.Controls.Add(accessCard, 0, 2);
-
-        // Nhật ký.
-        var historyCard = new Card("Connection History");
+        _deviceInfo = Text2($"Device Name:  {_info.Name}\nOperating System:  {_info.OperatingSystem} ({_info.Architecture}), {(Environment.Is64BitProcess ? "x64" : "x86")} build\nIP Address:  {_info.LocalIp ?? "–"}\nFingerprint:  {fingerprint}");
+        _deviceInfo.Padding = new Padding(Dpi.S(8));
         _history.BackColor = Theme.Surface;
         _history.ForeColor = Theme.TextSecondary;
         _history.Font = Theme.Font(8.5f);
-        historyCard.Controls.Add(_history);
-        layout.Controls.Add(historyCard, 0, 3);
+    }
 
-        Controls.Add(layout);
+    /// <summary>Nội dung tab "Device" cho cửa sổ chính.</summary>
+    public Control CreateDeviceView()
+    {
+        var panel = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Padding = new Padding(Dpi.S(6)) };
+        panel.Controls.Add(_deviceInfo);
+        return panel;
+    }
+
+    /// <summary>Nội dung tab "Connection History" cho cửa sổ chính.</summary>
+    public Control CreateHistoryView()
+    {
+        var panel = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Padding = new Padding(Dpi.S(4)) };
+        panel.Controls.Add(_history);
+        return panel;
     }
 
     private static FlowLayoutPanel Flow() => new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = true };
@@ -150,18 +134,14 @@ public sealed class AllowControlPanel : UserControl
         if (IsDisposed) return;
         _remoteId.Text = RemoteIdFormat.Display(_state.RemoteId);
         _status.Text = "Connection Status: " + DescribeConnection();
-        _access.Text = DescribeAccess();
-        _unattended.Text = _state.UnattendedEnabled ? "Disable Unattended Access" : "Enable Unattended Access";
-        _toggleAccess.Text = _state.AccessEnabled ? "Disable Remote Access" : "Enable Remote Access";
-        _toggleAccess.Kind = _state.AccessEnabled ? ButtonKind.Danger : ButtonKind.Primary;
-        _toggleAccess.Invalidate();
-        _unattended.Invalidate();
         _history.Items.Clear();
         _history.Items.AddRange(_log.ReadRecent(100));
-        var sessions = _sessions.Sessions;
-        _disconnectAll.Enabled = sessions.Count > 0;
-        UpdateSessionBar(sessions);
+        UpdateSessionBar(_sessions.Sessions);
+        _refreshSettings?.Invoke();
     }
+
+    // Làm tươi các nhãn trong form Cài đặt nếu đang mở (trạng thái truy cập thay đổi theo phiên).
+    private Action _refreshSettings;
 
     private string DescribeConnection()
     {
@@ -197,13 +177,13 @@ public sealed class AllowControlPanel : UserControl
         return parts;
     }
 
-    private void ToggleUnattended()
+    private void ToggleUnattended(IWin32Window owner)
     {
         try
         {
             if (!_state.UnattendedEnabled)
             {
-                var answer = MessageBox.Show(this, "Enable Unattended Access: anyone with the Remote ID and password can connect WITHOUT you accepting on screen.\n\nOnly enable this on a computer you own or are responsible for. Continue?",
+                var answer = MessageBox.Show(owner, "Enable Unattended Access: anyone with the Remote ID and password can connect WITHOUT you accepting on screen.\n\nOnly enable this on a computer you own or are responsible for. Continue?",
                     AppTitle, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
                 if (answer != DialogResult.Yes) return;
             }
@@ -230,29 +210,42 @@ public sealed class AllowControlPanel : UserControl
         UpdateView();
     }
 
-    private async Task ChangePasswordAsync()
+    private void ChangePassword(IWin32Window owner)
     {
         using var dialog = new AccessPasswordDialog(_auth);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        if (dialog.ShowDialog(owner) != DialogResult.OK) return;
         _log.Write(dialog.Cleared ? "Access password removed" : "Access password changed");
-        await Task.CompletedTask;
         UpdateView();
     }
 
-    private async Task OpenSettingsAsync()
+    /// <summary>Mở form Cài đặt (gồm Quyền truy cập, Relay và tùy chọn chung). Gọi từ menu của cửa sổ chính.</summary>
+    public void OpenSettings(IWin32Window owner)
     {
-        using var dialog = new ClientSettingsDialog(_state, _startup);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        using var dialog = new ClientSettingsDialog(_state, _startup, this);
+        _refreshSettings = dialog.RefreshAccess;
         try
         {
-            _store.Save(_state);
-            _startup.Set(dialog.StartWithWindows, Application.ExecutablePath);
-            _log.Write("Settings changed");
-            await _connection.RestartAsync();
+            if (dialog.ShowDialog(owner) != DialogResult.OK) return;
+            try
+            {
+                _store.Save(_state);
+                _startup.Set(dialog.StartWithWindows, Application.ExecutablePath);
+                _log.Write("Settings changed");
+                _ = _connection.RestartAsync();
+            }
+            catch (IOException ex) { ShowError("Could not save the settings: " + ex.Message); }
+            UpdateView();
         }
-        catch (IOException ex) { ShowError("Could not save the settings: " + ex.Message); }
-        UpdateView();
+        finally { _refreshSettings = null; }
     }
+
+    // --- Các thao tác Quyền truy cập, gọi từ form Cài đặt ---
+    internal bool AccessEnabled => _state.AccessEnabled;
+    internal bool UnattendedEnabled => _state.UnattendedEnabled;
+    internal string AccessSummary() => DescribeAccess();
+    internal void ToggleAccessFromSettings(IWin32Window owner) => ToggleAccess();
+    internal void ToggleUnattendedFromSettings(IWin32Window owner) => ToggleUnattended(owner);
+    internal void ChangePasswordFromSettings(IWin32Window owner) => ChangePassword(owner);
 
     private void TryStartListening()
     {
@@ -263,11 +256,65 @@ public sealed class AllowControlPanel : UserControl
     /// <summary>Báo trạng thái phiên cho biểu tượng khay của cửa sổ chính (chủ máy vẫn luôn thấy và ngắt được qua khay).</summary>
     private void UpdateSessionBar(IReadOnlyList<HostSession> sessions)
     {
-        var user = sessions.Count == 0 ? null : sessions[0].ControllerUser;
-        if (user == _controllingUser) return;
-        _controllingUser = user;
-        ControllerChanged?.Invoke(user);
+        var session = sessions.Count == 0 ? null : sessions[0];
+        var user = session?.ControllerUser;
+        if (user != _controllingUser) { _controllingUser = user; ControllerChanged?.Invoke(user); }
+
+        if (ReferenceEquals(session, _hostSession)) return;
+        if (_hostSession != null) { _hostSession.ChatReceived -= OnHostChat; _hostSession.TransferChanged -= OnHostTransfer; }
+        _hostSession = session;
+        // Nghe chat và chỉ tiến độ file GỬI ĐI: khi nhận file (kể cả qua trình quản lý file) máy bị điều khiển không hiển thị gì.
+        if (session != null) { session.ChatReceived += OnHostChat; session.TransferChanged += OnHostTransfer; }
     }
+
+    private void OnHostChat(ChatMessage m)
+    {
+        if (IsDisposed) return;
+        BeginInvoke(new Action(() => ShowChat().AddIncoming(m.Text)));
+    }
+
+    // File qua chat (ToFolder=false) hiển thị ở cửa sổ chat cả khi gửi và nhận.
+    // File qua trình quản lý file (ToFolder=true) máy bị điều khiển không hiển thị gì.
+    private void OnHostTransfer(FileTransferProgress p)
+    {
+        if (IsDisposed || p.ToFolder) return;
+        BeginInvoke(new Action(() => ShowChat().UpdateTransfer(p)));
+    }
+
+    /// <summary>Mở (nếu cần) cửa sổ chat của máy được điều khiển và trả về bảng chat để ghi tiếp.</summary>
+    private ChatPanel ShowChat()
+    {
+        if (_chatWindow == null || _chatWindow.IsDisposed)
+        {
+            _chatWindow = new ChatWindow(_controllingUser ?? "Controller");
+            _chatWindow.Panel.ChatEntered += text =>
+            {
+                var s = _hostSession;
+                if (s == null) return;
+                _chatWindow.Panel.AddOutgoing(text);
+                _ = QuietTask(s.SendChatAsync(text));
+            };
+            _chatWindow.Panel.SendFileRequested += () =>
+            {
+                var s = _hostSession;
+                if (s == null) return;
+                using var dialog = new OpenFileDialog { Title = "Send a file to the controller", Multiselect = true };
+                if (dialog.ShowDialog(_chatWindow) != DialogResult.OK) return;
+                foreach (var path in dialog.FileNames) _ = QuietTask(s.SendFileAsync(path));
+            };
+            _chatWindow.Panel.PauseRequested += id => _hostSession?.PauseTransfer(id);
+            _chatWindow.Panel.ResumeRequested += id => _hostSession?.ResumeTransfer(id);
+            _chatWindow.Panel.CancelRequested += id => _hostSession?.CancelTransfer(id);
+        }
+        // Chỉ đưa cửa sổ lên trước khi mới hiện lại, tránh cướp tiêu điểm theo từng khúc tiến độ.
+        var wasHidden = !_chatWindow.Visible;
+        if (!_chatWindow.Visible) _chatWindow.Show();
+        if (_chatWindow.WindowState == FormWindowState.Minimized) _chatWindow.WindowState = FormWindowState.Normal;
+        if (wasHidden) _chatWindow.Activate();
+        return _chatWindow.Panel;
+    }
+
+    private static async Task QuietTask(Task t) { try { await t.ConfigureAwait(false); } catch (Exception) { } }
 
     /// <summary>Hỏi chủ máy; không trả lời trong thời gian quy định thì coi là từ chối.</summary>
     private Task<bool> AskOwnerAsync(ControllerPeer peer, System.Threading.CancellationToken ct)
@@ -432,49 +479,146 @@ public sealed class AccessPasswordDialog : ClientDialog
     }
 }
 
-public sealed class ClientSettingsDialog : ClientDialog
+/// <summary>
+/// Form Cài đặt dạng tab: Quyền truy cập (bật/tắt điều khiển, mật khẩu, điều khiển ẩn),
+/// Relay (bản không đóng gói) và tùy chọn chung. Quyền truy cập tác động ngay; Relay/khởi động lưu khi bấm Save.
+/// </summary>
+public sealed class ClientSettingsDialog : Form
 {
     private readonly ClientState _state;
+    private readonly AllowControlPanel _owner;
     private readonly ModernInput _host = new ModernInput("relay.example.com"), _port = new ModernInput(), _pin = new ModernInput(), _token = new ModernInput(null, true), _sessionPort = new ModernInput();
-    private readonly CheckBox _startup;
+    private readonly Label _accessStatus = new Label { AutoSize = false, Dock = DockStyle.Top, UseMnemonic = false, Font = Theme.Font(9f), ForeColor = Theme.TextSecondary, Height = Dpi.S(96) };
+    private readonly ModernButton _toggleAccess = new ModernButton("Disable Remote Access");
+    private readonly ModernButton _unattended = new ModernButton("Enable Unattended Access");
 
-    public bool StartWithWindows => _startup.Checked;
+    public bool StartWithWindows => _startupField.Checked;
 
-    public ClientSettingsDialog(ClientState state, StartupManager startup) : base("Settings", "Save")
+    public ClientSettingsDialog(ClientState state, StartupManager startup, AllowControlPanel owner)
     {
         _state = state;
-        // Bản phát hành: không đưa giá trị máy chủ vào điều khiển nào, kể cả điều khiển ẩn.
-        if (!RDM.Shared.Common.ProductMode.Managed)
-        {
-            Field("Relay Server", _host);
-            Field("Port", _port);
-            Field("Relay pinned key (SHA-256, optional)", _pin, "Only for a Relay with an internal certificate. Get this value from the Relay administrator.");
-            Field("Device enrollment code (if the Relay requires one)", _token, _state.EnrollmentToken != null ? "Saved. Leave blank to keep it." : null);
-            _host.Text = state.RelayHost;
-            _port.Text = state.RelayPort.ToString();
-            _pin.Text = state.RelayPin;
-            // Cổng kết nối trực tiếp chỉ hiện ở bản không đóng gói; bản phát hành dùng cổng mặc định, không cho đổi.
-            Field("Port for direct connections", _sessionPort, "The firewall must allow this port. Changing it requires restarting RDM.");
-            _sessionPort.Text = state.SessionPort.ToString();
-        }
-        _startup = new CheckBox { Text = "Start with Windows", AutoSize = true, Font = Theme.Font(9.5f), ForeColor = Theme.Text, BackColor = Color.Transparent, Checked = startup.IsEnabled };
-        Fields.Controls.Add(_startup);
+        _owner = owner;
+        Text = "Settings";
+        Icon = Theme.AppIcon;
+        Font = Theme.Font();
+        BackColor = Theme.Page;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = MinimizeBox = false;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.CenterParent;
+        AutoScaleMode = AutoScaleMode.None;
+        ClientSize = new Size(Dpi.S(470), Dpi.S(430));
+
+        var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(Dpi.S(12), Dpi.S(6)) };
+        tabs.TabPages.Add(BuildAccessTab());
+        if (!RDM.Shared.Common.ProductMode.Managed) tabs.TabPages.Add(BuildRelayTab());
+        tabs.TabPages.Add(BuildGeneralTab(startup));
+
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = Dpi.S(52), Padding = new Padding(Dpi.S(12)), BackColor = Theme.Page };
+        var save = new ModernButton("Save", ButtonKind.Primary);
+        save.Click += (s, e) => Save();
+        var close = new ModernButton("Close") { Margin = new Padding(Dpi.S(8), 0, 0, 0), DialogResult = DialogResult.Cancel };
+        buttons.Controls.Add(save);
+        buttons.Controls.Add(close);
+        CancelButton = close;
+
+        Controls.Add(tabs);
+        Controls.Add(buttons);
+        RefreshAccess();
     }
 
-    protected override Task<bool> AcceptAsync()
+    private TabPage BuildAccessTab()
     {
-        if (RDM.Shared.Common.ProductMode.Managed) return Task.FromResult(true);
-        var host = _host.Text.Trim();
-        if (host.Length > 0 && Uri.CheckHostName(host) == UriHostNameType.Unknown) throw new ClientValidationException("Invalid Relay address.");
-        if (!int.TryParse(_port.Text, out var port) || port < 1 || port > 65535) throw new ClientValidationException("Port must be between 1 and 65535.");
-        var pin = _pin.Text.Trim();
-        if (pin.Length != 0 && pin.Length != 64) throw new ClientValidationException("The pinned key must be 64 hex characters.");
-        _state.RelayHost = host.Length == 0 ? null : host;
-        if (!int.TryParse(_sessionPort.Text, out var sessionPort) || sessionPort < 1 || sessionPort > 65535) throw new ClientValidationException("The connection port must be between 1 and 65535.");
-        _state.SessionPort = sessionPort;
-        _state.RelayPort = port;
-        _state.RelayPin = pin.Length == 0 ? null : pin;
-        if (_token.Text.Length > 0) _state.EnrollmentToken = _token.Text;
-        return Task.FromResult(true);
+        var page = new TabPage("Access Permission") { BackColor = Theme.Page, Padding = new Padding(Dpi.S(14)) };
+        var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent };
+        _accessStatus.Width = Dpi.S(420);
+        flow.Controls.Add(_accessStatus);
+        var changePassword = new ModernButton("Change Password") { Margin = new Padding(0, Dpi.S(4), 0, Dpi.S(6)) };
+        changePassword.Click += (s, e) => { _owner.ChangePasswordFromSettings(this); RefreshAccess(); };
+        _unattended.Margin = new Padding(0, 0, 0, Dpi.S(6));
+        _unattended.Click += (s, e) => { _owner.ToggleUnattendedFromSettings(this); RefreshAccess(); };
+        _toggleAccess.Click += (s, e) => { _owner.ToggleAccessFromSettings(this); RefreshAccess(); };
+        flow.Controls.Add(changePassword);
+        flow.Controls.Add(_unattended);
+        flow.Controls.Add(_toggleAccess);
+        foreach (var c in new Control[] { changePassword, _unattended, _toggleAccess }) c.Width = Dpi.S(240);
+        page.Controls.Add(flow);
+        return page;
+    }
+
+    private TabPage BuildRelayTab()
+    {
+        var page = new TabPage("Relay") { BackColor = Theme.Page, Padding = new Padding(Dpi.S(14)), AutoScroll = true };
+        var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent };
+        void Field(string label, Control c, string hint = null)
+        {
+            flow.Controls.Add(new Label { Text = label, AutoSize = true, UseMnemonic = false, ForeColor = Theme.TextSecondary, Font = Theme.Font(9f), Margin = new Padding(0, Dpi.S(4), 0, Dpi.S(2)) });
+            c.Width = Dpi.S(420);
+            flow.Controls.Add(c);
+            if (hint != null) flow.Controls.Add(new Label { Text = hint, AutoSize = false, Width = Dpi.S(420), Height = Dpi.S(30), UseMnemonic = false, ForeColor = Theme.TextMuted, Font = Theme.Font(8.5f) });
+        }
+        Field("Relay Server", _host);
+        Field("Port", _port);
+        Field("Relay pinned key (SHA-256, optional)", _pin, "Only for a Relay with an internal certificate. Get this value from the Relay administrator.");
+        Field("Device enrollment code (if the Relay requires one)", _token, _state.EnrollmentToken != null ? "Saved. Leave blank to keep it." : null);
+        Field("Port for direct connections", _sessionPort, "The firewall must allow this port. Changing it requires restarting RDM.");
+        _host.Text = _state.RelayHost;
+        _port.Text = _state.RelayPort.ToString();
+        _pin.Text = _state.RelayPin;
+        _sessionPort.Text = _state.SessionPort.ToString();
+        page.Controls.Add(flow);
+        return page;
+    }
+
+    private TabPage BuildGeneralTab(StartupManager startup)
+    {
+        var page = new TabPage("General") { BackColor = Theme.Page, Padding = new Padding(Dpi.S(16), Dpi.S(20), Dpi.S(16), Dpi.S(16)) };
+        var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent };
+        _startupField = new CheckBox { Text = "Start with Windows", AutoSize = true, Font = Theme.Font(9.5f), ForeColor = Theme.Text, BackColor = Color.Transparent, Checked = startup.IsEnabled, Margin = new Padding(0, Dpi.S(6), 0, 0) };
+        flow.Controls.Add(_startupField);
+        page.Controls.Add(flow);
+        return page;
+    }
+
+    private CheckBox _startupField;
+
+    /// <summary>Làm tươi nhãn và nút ở tab Quyền truy cập theo trạng thái hiện tại.</summary>
+    public void RefreshAccess()
+    {
+        if (IsDisposed) return;
+        _accessStatus.Text = _owner.AccessSummary();
+        _unattended.Text = _owner.UnattendedEnabled ? "Disable Unattended Access" : "Enable Unattended Access";
+        _toggleAccess.Text = _owner.AccessEnabled ? "Disable Remote Access" : "Enable Remote Access";
+        _toggleAccess.Kind = _owner.AccessEnabled ? ButtonKind.Danger : ButtonKind.Primary;
+        _toggleAccess.Invalidate();
+        _unattended.Invalidate();
+    }
+
+    private void Save()
+    {
+        if (!RDM.Shared.Common.ProductMode.Managed)
+        {
+            try
+            {
+                var host = _host.Text.Trim();
+                if (host.Length > 0 && Uri.CheckHostName(host) == UriHostNameType.Unknown) throw new ClientValidationException("Invalid Relay address.");
+                if (!int.TryParse(_port.Text, out var port) || port < 1 || port > 65535) throw new ClientValidationException("Port must be between 1 and 65535.");
+                var pin = _pin.Text.Trim();
+                if (pin.Length != 0 && pin.Length != 64) throw new ClientValidationException("The pinned key must be 64 hex characters.");
+                if (!int.TryParse(_sessionPort.Text, out var sessionPort) || sessionPort < 1 || sessionPort > 65535) throw new ClientValidationException("The connection port must be between 1 and 65535.");
+                _state.RelayHost = host.Length == 0 ? null : host;
+                _state.SessionPort = sessionPort;
+                _state.RelayPort = port;
+                _state.RelayPin = pin.Length == 0 ? null : pin;
+                if (_token.Text.Length > 0) _state.EnrollmentToken = _token.Text;
+            }
+            catch (ClientValidationException ex)
+            {
+                MessageBox.Show(this, ex.Message, AllowControlPanel.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+        }
+        DialogResult = DialogResult.OK;
+        Close();
     }
 }

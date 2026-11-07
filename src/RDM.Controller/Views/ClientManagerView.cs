@@ -37,7 +37,7 @@ public sealed class ClientManagerView : ViewBase
              .AddColumn("Group", d => d.GroupName, 75)
              .AddColumn("IP Address", d => d.IpAddress, 70)
              .AddColumn("OS", d => d.OperatingSystem, 80)
-             .AddColumn("Status", d => Rt.Presence.StatusText(d), 90)
+             .AddColumn("Status", d => (Rt.Presence.IsOnline(d) ? "\U0001F7E2 " : "⚪ ") + Rt.Presence.StatusText(d), 110)
              .AddColumn("Last Online", d => Ui.When(d.LastOnline), 95);
         _grid.CellDoubleClick += async (s, e) => { if (e.RowIndex >= 0) await ConnectSelectedAsync(); };
 

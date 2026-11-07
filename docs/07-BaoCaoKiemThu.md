@@ -153,6 +153,17 @@ Bản Release mang sẵn `erp247.ddns.net:31408`, khóa ghim và mã đăng ký;
 
 **Giao diện khay và Remember password (0.6.5):** máy bị điều khiển bỏ thanh đỏ và bong bóng, chỉ còn chỉ báo lặng trên biểu tượng khay của cửa sổ chính (chú thích "Being controlled by …" và lệnh Disconnect) — vẫn công khai, không phải cảnh báo bật lên. Đóng cửa sổ chỉ thu nhỏ xuống khay; thoát hẳn qua menu Exit. Hộp đăng nhập có ô "Remember password" (lưu bằng DPAPI theo tài khoản Windows). Bản Managed bỏ ô cổng trong Settings. Chưa kiểm tra giao diện bằng mắt hay script.
 
+**Giai đoạn 6 - File Transfer và Chat (0.7.0):** chat và truyền file đi trên cùng kênh E2EE của phiên, không mở cổng mới. File nhận về lưu vào `Documents\RDM Received Files`, tên file bị cắt chỉ còn phần tên (chặn vượt thư mục), không ghi đè, không chạy. Phía nhận tự nhận vì phiên đã xác thực; hai bên đều thấy trong bảng chat. Máy điều khiển: menu khay có "Send File..." và "Chat" (bảng chat gắn bên phải cửa sổ). Máy bị điều khiển: cửa sổ chat tự mở khi có tin hoặc file. Kiểm thử engine (`SessionTransferTests`) 5/5: chat tới nơi; file 300 KB nguyên vẹn; tên vượt thư mục bị cắt về đúng thư mục nhận; không ghi đè (đổi thành "(1)"); khúc dữ liệu quá lớn bị từ chối. **Chưa kiểm tra giao diện chat/file bằng mắt hay giữa hai máy thật.**
+
+**Trình quản lý file, chat đẹp hơn, nhiều màn hình (0.8.0):**
+- Truyền file kiểu AnyDesk: cửa sổ File Manager hai khung (máy điều khiển trái, máy ở xa phải), duyệt thư mục/ổ đĩa của máy ở xa, Upload/Download. Giao thức duyệt thư mục (FsList/FsListReply/FsGet) và truyền file có thư mục đích đi trên cùng kênh E2EE. Theo yêu cầu, máy bị điều khiển **không hiển thị gì** khi truyền file (chỉ chat mới mở cửa sổ). File vẫn lưu an toàn: tên bị cắt chống vượt thư mục, không ghi đè, không tự chạy; thư mục đích là đường dẫn tuyệt đối do người dùng duyệt tới (toàn quyền hệ thống như AnyDesk, giới hạn theo quyền của tài khoản đang đăng nhập).
+- Chat vẽ lại kiểu bong bóng, có thanh tiêu đề và nút đóng.
+- Nhiều màn hình: thanh nút nổi ở đáy cửa sổ Remote (1, 2, ..., All) và phím tắt Ctrl+1..9 chọn màn hình, Ctrl+0 xem tất cả. Mục "All Monitors" chụp toàn vùng ảo, thêm tự động ở máy đích khi có từ 2 màn hình.
+- Kiểm thử engine 8/8 (thêm: duyệt thư mục trả đúng mục, upload lưu đúng thư mục đích, download về đúng thư mục local).
+- **Chưa kiểm tra giao diện các phần này bằng mắt hay giữa hai máy thật.** Bảo mật truyền file: hiện tự nhận, chưa có bước hỏi đồng ý từng file.
+
+**Thoát toàn màn hình (0.7.0):** ở chế độ full không còn thanh công cụ, nên thêm phím F11 (chặn tại máy điều khiển, không gửi sang máy đích) và nút nổi "Exit Full Screen" ở mép trên; menu khay vẫn có mục Full Screen.
+
 **Lỗi cạnh tranh ở công tắc khẩn cấp (sửa 0.6.5):** khi chủ máy ngắt, máy chủ gửi khung "owner ended" rồi đóng socket ngay; ở bản Release, socket bị đóng (kèm RST) trước khi khung tới nơi, nên Controller nhận nhầm là mất kết nối (byUser=false) và có thể tự kết nối lại. Chặn kết nối mới (OwnerBlock) vẫn chặn được, nhưng tín hiệu "có chủ ý" không đáng tin. `OwnerDisconnectAll_EndsSession_AndReleasesInput` hỏng 100% ở Release (cả x86 và x64), đạt ở Debug. Sửa: sau khi gửi khung, chờ ngắn để Controller đọc xong và tự đóng trước (đóng nhẹ nhàng). Sau khi sửa: 10/10 ở cả Release x86 và x64.
 
 **Lỗi phát hiện và sửa trong đợt này:**

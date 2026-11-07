@@ -22,12 +22,13 @@ public sealed class HomeForm : Form
     private readonly RdmRuntime _rt;
     private readonly AllowControlPanel _allow;
     private readonly ModernInput _remoteId = new ModernInput("123 456 789");
-    private readonly ModernInput _address = new ModernInput("Only needed on a different subnet");
     private readonly ModernInput _password = new ModernInput("Leave blank if the remote computer has no password", true);
     private readonly ModernButton _connect = new ModernButton("CONNECT", ButtonKind.Primary);
     private readonly ModernButton _manage = new ModernButton("Device Management (sign-in required)");
     private readonly GridView<ConnectionRecord> _recent = new GridView<ConnectionRecord>();
     private MainForm _management;
+    private SplitContainer _split;
+    private bool _splitReady;
     private readonly NotifyIcon _tray = new NotifyIcon { Visible = true };
     private readonly ContextMenuStrip _trayMenu = new ContextMenuStrip();
     private ToolStripMenuItem _trayStatus, _trayDisconnect;
@@ -52,15 +53,36 @@ public sealed class HomeForm : Form
             TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(Dpi.S(16), 0, 0, 0), UseMnemonic = false
         });
 
-        var columns = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Padding = new Padding(Dpi.S(6)) };
-        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        columns.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        columns.Controls.Add(_allow, 0, 0);
-        columns.Controls.Add(BuildControlSide(), 1, 0);
+        var menu = BuildMenu();
 
-        Controls.Add(columns);
+        // Trên: hai thẻ hành động (Remote ID bên trái, điều khiển máy khác bên phải).
+        var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent };
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        top.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        top.Controls.Add(_allow, 0, 0);
+        top.Controls.Add(BuildControlSide(), 1, 0);
+
+        // Dưới: tab control gồm Device / Connection History / Recent Connections.
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        tabs.TabPages.Add(TabPage("Device", _allow.CreateDeviceView()));
+        tabs.TabPages.Add(TabPage("Connection History", _allow.CreateHistoryView()));
+        tabs.TabPages.Add(TabPage("Recent Connections", CreateRecentView()));
+
+        // Thanh chia kéo được giữa vùng hành động (trên) và vùng tab (dưới).
+        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, BackColor = Theme.Page, SplitterWidth = Dpi.S(6), Panel1MinSize = Dpi.S(180), Panel2MinSize = Dpi.S(110) };
+        split.Panel1.Padding = new Padding(Dpi.S(6));
+        split.Panel2.Padding = new Padding(Dpi.S(6), 0, Dpi.S(6), Dpi.S(6));
+        top.Dock = DockStyle.Fill;
+        tabs.Dock = DockStyle.Fill;
+        split.Panel1.Controls.Add(top);
+        split.Panel2.Controls.Add(tabs);
+        split.SplitterMoved += (s, e) => { if (_splitReady) SaveSplit(split.SplitterDistance); };
+        _split = split;
+
+        Controls.Add(split);
         Controls.Add(header);
+        Controls.Add(menu);
 
         _connect.Click += async (s, e) => await ConnectAsync();
         _manage.Click += async (s, e) => await OpenManagementAsync();
@@ -69,6 +91,17 @@ public sealed class HomeForm : Form
         {
             Ui.Try(this, () => _rt.Presence.Start());
             AcceptButton = _connect;
+            // Mặc định vùng tab chiếm ~25% chiều cao; nếu lần trước đã kéo thì dùng lại kích thước đã lưu.
+            if (_split != null)
+            {
+                var saved = LoadSplit();
+                var def = (int)(_split.Height * 0.72);
+                var want = saved > 0 ? saved : def;
+                var min = _split.Panel1MinSize;
+                var max = Math.Max(min, _split.Height - _split.Panel2MinSize - _split.SplitterWidth);
+                try { _split.SplitterDistance = Math.Min(max, Math.Max(min, want)); } catch (InvalidOperationException) { }
+                _splitReady = true;
+            }
             await RefreshRecentAsync();
         };
         SessionRegistry.Changed += OnSessionsChanged;
@@ -138,13 +171,44 @@ public sealed class HomeForm : Form
         if (IsHandleCreated && InvokeRequired) BeginInvoke(new Action(Apply)); else Apply();
     }
 
+    // Lưu/đọc vị trí thanh chia để lần sau mở lại giữ nguyên kích thước vùng tab.
+    private string SplitFile() => System.IO.Path.Combine(System.IO.Path.GetDirectoryName(_rt.Context.DatabasePath) ?? ".", "home-layout.txt");
+
+    private void SaveSplit(int distance)
+    {
+        try { System.IO.File.WriteAllText(SplitFile(), distance.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
+        catch (System.IO.IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    private int LoadSplit()
+    {
+        try { return int.TryParse(System.IO.File.ReadAllText(SplitFile()).Trim(), out var v) && v > 0 ? v : 0; }
+        catch (System.IO.IOException) { return 0; } catch (UnauthorizedAccessException) { return 0; }
+    }
+
+    private MenuStrip BuildMenu()
+    {
+        var menu = new MenuStrip { Dock = DockStyle.Top, BackColor = Theme.Surface, ForeColor = Theme.Text, Font = Theme.Font(9.5f), Padding = new Padding(Dpi.S(6), Dpi.S(2), 0, Dpi.S(2)) };
+        var settings = new ToolStripMenuItem("Settings", null, (s, e) => _allow.OpenSettings(this));
+        var exit = new ToolStripMenuItem("Exit", null, (s, e) => { _exiting = true; Close(); });
+        menu.Items.Add(settings);
+        menu.Items.Add(exit);
+        MainMenuStrip = menu;
+        return menu;
+    }
+
+    private static TabPage TabPage(string title, Control content)
+    {
+        var page = new TabPage(title) { BackColor = Theme.Page, Padding = new Padding(Dpi.S(4)) };
+        content.Dock = DockStyle.Fill;
+        page.Controls.Add(content);
+        return page;
+    }
+
     private Control BuildControlSide()
     {
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, BackColor = Color.Transparent };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, Dpi.S(376)));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
         var card = new Card("Control Another Computer");
+        card.Dock = DockStyle.Fill;
         var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent };
         void Field(string label, Control c)
         {
@@ -153,8 +217,7 @@ public sealed class HomeForm : Form
         }
         Field("Remote ID", _remoteId);
         Field("Remote computer's access password", _password);
-        Field("IP address (optional)", _address);
-        _connect.Margin = new Padding(0, Dpi.S(4), 0, Dpi.S(8));
+        _connect.Margin = new Padding(0, Dpi.S(8), 0, Dpi.S(8));
         flow.Controls.Add(_connect);
         var note = Ui.Text(RDM.Shared.Common.ProductMode.Managed ? "Connects over your local network or the Internet." : "Connects directly when possible, otherwise through the Relay Server (Settings).", 8.5f, false, Theme.TextMuted);
         flow.Controls.Add(note);
@@ -163,16 +226,18 @@ public sealed class HomeForm : Form
         flow.Resize += (s, e) =>
         {
             var w = Math.Max(Dpi.S(160), flow.ClientSize.Width - Dpi.S(4));
-            foreach (var c in new Control[] { _remoteId, _password, _address, _connect, _manage }) c.Width = w;
+            foreach (var c in new Control[] { _remoteId, _password, _connect, _manage }) c.Width = w;
         };
         card.Controls.Add(flow);
-        layout.Controls.Add(card, 0, 0);
+        return card;
+    }
 
+    private Control CreateRecentView()
+    {
         _recent.AddColumn("Recent computer", r => r.DeviceName, 100).AddColumn("Remote ID", r => RemoteIdFormat.Display(r.RemoteId), 70).AddColumn("Time", r => Ui.When(r.StartTime), 70);
-        var recentCard = new Card("Recent Connections (double-click to fill in)");
-        recentCard.Controls.Add(_recent);
-        layout.Controls.Add(recentCard, 0, 1);
-        return layout;
+        var panel = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Padding = new Padding(Dpi.S(4)) };
+        panel.Controls.Add(_recent);
+        return panel;
     }
 
     private void OnSessionsChanged()
@@ -198,7 +263,7 @@ public sealed class HomeForm : Form
         try
         {
             // Ô mật khẩu để trống nghĩa là không có mật khẩu, không hỏi thêm: chủ máy sẽ chấp nhận trên màn hình.
-            await ConnectFlow.ConnectAsync(_rt, this, _remoteId.Text, _password.Text, _address.Text);
+            await ConnectFlow.ConnectAsync(_rt, this, _remoteId.Text, _password.Text, string.Empty);
             _password.Text = string.Empty;
             await RefreshRecentAsync();
         }
@@ -236,8 +301,12 @@ public sealed class HomeForm : Form
         {
             _management = null;
             EndManagement();
+            // Hiện lại cửa sổ chính khi đóng Device Management (trừ khi đang thoát hẳn).
+            if (!_exiting && !IsDisposed) { Show(); WindowState = FormWindowState.Normal; Activate(); }
         };
         _management.Show();
+        // Ẩn cửa sổ chính để chỉ còn một nút trên thanh taskbar (biểu tượng khay vẫn giữ).
+        Hide();
         await Task.CompletedTask;
     }
 

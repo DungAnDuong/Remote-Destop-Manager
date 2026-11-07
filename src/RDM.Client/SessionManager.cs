@@ -47,12 +47,25 @@ public sealed class HostSession
     public long BytesSent { get; private set; }
     public event Action<HostSession, string> Ended;
 
+    private readonly SessionTransfers _transfers;
+    public event Action<ChatMessage> ChatReceived;
+    public event Action<FileTransferProgress> TransferChanged;
+
+    public Task SendChatAsync(string text) => _transfers.SendChatAsync(text, _cts.Token);
+    public Task SendFileAsync(string path) => _transfers.SendFileAsync(path, _cts.Token);
+    public void PauseTransfer(int id) => _transfers.PauseOutgoing(id);
+    public void ResumeTransfer(int id) => _transfers.ResumeOutgoing(id);
+    public void CancelTransfer(int id) => _transfers.CancelTransfer(id);
+
     public HostSession(SecureChannel channel, ControllerPeer peer, IScreenSource screen, IInputSink input, CancellationToken shutdown)
     {
         _channel = channel; _screen = screen; _input = input;
         ControllerUser = peer.Username; ControllerFingerprint = peer.Fingerprint;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(shutdown);
         _cts.CancelAfter(MaxDuration);
+        _transfers = new SessionTransfers((t, p, c) => _channel.SendAsync(t, p, c), SessionTransfers.DefaultReceiveDir(), _cts.Token);
+        _transfers.ChatReceived += m => ChatReceived?.Invoke(m);
+        _transfers.TransferChanged += p => TransferChanged?.Invoke(p);
     }
 
     public void Disconnect() => Cancel();
@@ -118,6 +131,7 @@ public sealed class HostSession
     {
         if (Interlocked.Exchange(ref _closed, 1) != 0) return;
         _cts.Cancel();
+        _transfers.Dispose();
         _input.ReleaseAll();
         _screen.Dispose();
         _channel.Dispose();
@@ -142,7 +156,16 @@ public sealed class HostSession
             if (wait > TimeSpan.Zero) await Task.Delay(wait, ct).ConfigureAwait(false);
             lastCapture = _clock.Elapsed;
 
-            var frame = _screen.Capture(monitor);
+            RawFrame frame;
+            try { frame = _screen.Capture(monitor); }
+            catch (Exception ex) when (IsTransientCapture(ex))
+            {
+                // Lỗi GDI/GDI+ thoáng qua (ví dụ màn hình đổi mạnh khi mở hộp thoại): bỏ khung này, không ngắt phiên.
+                Log.Debug("Transient capture error: {0}", ex.GetType().Name);
+                _encoder.Reset();
+                await Task.Delay(200, ct).ConfigureAwait(false);
+                continue;
+            }
             if (frame == null)
             {
                 if (!blocked)
@@ -160,20 +183,42 @@ public sealed class HostSession
                 await _channel.SendAsync(SessionMessage.Notice, Wire.Build(w => w.Str(string.Empty)), ct).ConfigureAwait(false);
             }
 
-            var changes = _encoder.FindChanges(frame);
-            if (changes.Count == 0) continue;
-
-            var message = new FrameMessage { Sequence = Interlocked.Increment(ref _sequence), Monitor = monitor, Width = frame.Width, Height = frame.Height, Quality = quality };
-            foreach (var r in changes.Take(SessionInfo.MaxTiles))
-                message.Tiles.Add(new FrameTile { X = r.X, Y = r.Y, Width = r.Width, Height = r.Height, Data = FrameEncoder.Encode(frame, r, quality, scale) });
-            var payload = SessionWire.Frame(message);
-            lock (_sentAt) _sentAt[message.Sequence] = _clock.ElapsedMilliseconds;
+            byte[] payload;
+            long seq;
+            try
+            {
+                var changes = _encoder.FindChanges(frame);
+                if (changes.Count == 0) continue;
+                var tiles = new List<FrameTile>();
+                foreach (var r in changes.Take(SessionInfo.MaxTiles))
+                    tiles.Add(new FrameTile { X = r.X, Y = r.Y, Width = r.Width, Height = r.Height, Data = FrameEncoder.Encode(frame, r, quality, scale) });
+                seq = Interlocked.Increment(ref _sequence);
+                var message = new FrameMessage { Sequence = seq, Monitor = monitor, Width = frame.Width, Height = frame.Height, Quality = quality };
+                message.Tiles.AddRange(tiles);
+                payload = SessionWire.Frame(message);
+            }
+            catch (Exception ex) when (IsTransientCapture(ex))
+            {
+                // Lỗi nén GDI+ thoáng qua: bỏ khung, dựng lại bộ so khung, không ngắt phiên.
+                Log.Debug("Transient encode error: {0}", ex.GetType().Name);
+                _encoder.Reset();
+                await Task.Delay(200, ct).ConfigureAwait(false);
+                continue;
+            }
+            lock (_sentAt) _sentAt[seq] = _clock.ElapsedMilliseconds;
             await _channel.SendAsync(SessionMessage.Frame, payload, ct).ConfigureAwait(false);
             FramesSent++;
             BytesSent += payload.Length;
         }
         ct.ThrowIfCancellationRequested();
     }
+
+    // Lỗi vẽ/chụp tạm thời không nên ngắt phiên; lỗi kênh/IO thì vẫn để ngắt như cũ.
+    private static bool IsTransientCapture(Exception ex) =>
+        ex is System.Runtime.InteropServices.ExternalException
+        || ex is InvalidOperationException
+        || ex is OutOfMemoryException
+        || ex is ArgumentException;
 
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
@@ -198,7 +243,9 @@ public sealed class HostSession
                 case SessionMessage.SetMonitor: await OnSetMonitorAsync(Wire.Parse(payload, r => r.ReadInt32()), ct).ConfigureAwait(false); break;
                 case SessionMessage.SetQuality: OnSetQuality(payload); break;
                 case SessionMessage.Disconnect: return;
-                default: throw new ProtocolException("Invalid message from the controlling computer.");
+                default:
+                    if (!await _transfers.HandleAsync(type, payload).ConfigureAwait(false)) throw new ProtocolException("Invalid message from the controlling computer.");
+                    break;
             }
         }
     }

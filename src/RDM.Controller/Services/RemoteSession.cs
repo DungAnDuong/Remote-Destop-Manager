@@ -51,16 +51,33 @@ public sealed class RemoteSession : IDisposable
     public long TotalFrames => Interlocked.Read(ref _frames);
     public bool IsClosed => _closed != 0;
 
+    private readonly SessionTransfers _transfers;
+
     public event Action MonitorsChanged;
     public event Action FrameReady;
     public event Action<string> Notice;
     /// <summary>Báo đóng phiên. Đối số true là có chủ ý (người dùng hoặc chủ máy ngắt): không được tự kết nối lại. False là mất kết nối bất thường.</summary>
     public event Action<string, bool> Closed;
+    public event Action<ChatMessage> ChatReceived;
+    public event Action<FileTransferProgress> TransferChanged;
+
+    public Task SendChatAsync(string text) => _transfers.SendChatAsync(text, _cts.Token);
+    public Task SendFileAsync(string path) => _transfers.SendFileAsync(path, _cts.Token);
+    public Task UploadAsync(string localPath, string remoteDir) => _transfers.SendFileAsync(localPath, remoteDir, _cts.Token);
+    public Task<FsListing> ListRemoteAsync(string path) => _transfers.ListRemoteAsync(path, _cts.Token);
+    public Task RequestDownloadAsync(string remotePath, string localDir) => _transfers.RequestDownloadAsync(remotePath, localDir, _cts.Token);
+    public Task<(bool Ok, string Error)> MutateRemoteAsync(FsOp op, string path, string arg2) => _transfers.MutateRemoteAsync(op, path, arg2, _cts.Token);
+    public void PauseTransfer(int id) => _transfers.PauseOutgoing(id);
+    public void ResumeTransfer(int id) => _transfers.ResumeOutgoing(id);
+    public void CancelTransfer(int id) => _transfers.CancelTransfer(id);
 
     public RemoteSession(HandshakeResult handshake)
     {
         _channel = handshake.Channel;
         HostKey = handshake.PeerKey;
+        _transfers = new SessionTransfers((t, p, c) => _channel.SendAsync(t, p, c), SessionTransfers.DefaultReceiveDir(), _cts.Token);
+        _transfers.ChatReceived += m => ChatReceived?.Invoke(m);
+        _transfers.TransferChanged += p => TransferChanged?.Invoke(p);
     }
 
     public void Start()
@@ -96,7 +113,9 @@ public sealed class RemoteSession : IDisposable
                         reason = Wire.Parse(payload, r => r.Str());
                         byUser = true;
                         return;
-                    default: throw new ProtocolException("Invalid message from the remote computer.");
+                    default:
+                        if (!await _transfers.HandleAsync(type, payload).ConfigureAwait(false)) throw new ProtocolException("Invalid message from the remote computer.");
+                        break;
                 }
             }
         }
@@ -227,6 +246,7 @@ public sealed class RemoteSession : IDisposable
         if (Interlocked.Exchange(ref _closed, 1) != 0) return;
         try { _cts.Cancel(); }
         catch (ObjectDisposedException) { }
+        _transfers.Dispose();
         _channel.Dispose();
     }
 

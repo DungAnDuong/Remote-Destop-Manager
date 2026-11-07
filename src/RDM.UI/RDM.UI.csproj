@@ -5,6 +5,7 @@
     <RootNamespace>RDM.UI</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\RDM.Shared\RDM.Shared.csproj" />
     <EmbeddedResource Include="..\..\assets\RDM.ico" LogicalName="RDM.ico" />
   </ItemGroup>
 </Project>

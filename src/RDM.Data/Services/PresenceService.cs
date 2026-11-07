@@ -92,6 +92,14 @@ public sealed class PresenceService : IDisposable
 
     public PresenceEntry Find(string remoteId) => remoteId != null && _entries.TryGetValue(remoteId, out var e) ? e : null;
 
+    /// <summary>Thiết bị có đang Online thật theo Relay hay không (để hiển thị đèn xanh/xám).</summary>
+    public bool IsOnline(ClientDevice device)
+    {
+        if (device == null || !device.IsEnabled || Availability != PresenceAvailability.Connected) return false;
+        var e = Find(device.RemoteId);
+        return e != null && e.IsOnline;
+    }
+
     public string StatusText(ClientDevice device)
     {
         if (!device.IsEnabled) return "Disabled";

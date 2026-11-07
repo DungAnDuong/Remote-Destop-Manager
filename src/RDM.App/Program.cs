@@ -83,6 +83,16 @@ internal static class Program
                 if (rt.Settings.Get(SettingKeys.Theme) == nameof(ThemeMode.Dark)) Theme.Set(ThemeMode.Dark);
                 rt.PurgeAudit();
             });
+            // Bản Managed: cấu hình Relay đóng gói chỉ áp cho phần client; đồng bộ sang settings của controller
+            // để PresenceService kết nối Relay và hiển thị Online/Offline thật (không còn "Unknown").
+            if (RDM.Shared.Common.ProductMode.Managed)
+                Ui.Try(null, () =>
+                {
+                    rt.Settings.Set(SettingKeys.RelayHost, state.RelayHost ?? "");
+                    rt.Settings.Set(SettingKeys.RelayPort, state.RelayPort.ToString());
+                    rt.Settings.Set(SettingKeys.RelayPin, state.RelayPin ?? "");
+                    rt.Settings.Set(SettingKeys.RelayToken, state.EnrollmentToken ?? "");
+                });
 
             var activity = new ActivityLog(Path.Combine(clientDir, "activity.log"));
             var auth = new ClientAuthentication(store, state);

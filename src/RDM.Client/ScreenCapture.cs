@@ -75,6 +75,15 @@ public sealed class GdiScreenCapture : IScreenSource
         // Monitor chính luôn là Monitor 1.
         var ordered = list.OrderByDescending(m => m.IsPrimary).ThenBy(m => m.X).ThenBy(m => m.Y).ToList();
         for (var i = 0; i < ordered.Count; i++) ordered[i].Index = i;
+        // Nhiều màn hình: thêm một mục tổng hợp chụp cả vùng ảo. Rect của nó chính là vùng ảo nên Capture không cần xử lý riêng.
+        if (ordered.Count > 1)
+        {
+            var minX = ordered.Min(m => m.X);
+            var minY = ordered.Min(m => m.Y);
+            var maxR = ordered.Max(m => m.X + m.Width);
+            var maxB = ordered.Max(m => m.Y + m.Height);
+            ordered.Add(new MonitorInfo { Index = ordered.Count, X = minX, Y = minY, Width = maxR - minX, Height = maxB - minY, IsAll = true });
+        }
         return ordered;
     }
 

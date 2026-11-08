@@ -1,21 +1,21 @@
-# 05 – Thư viện NuGet (Bước 7)
+# 05 – NuGet Libraries (Step 7)
 
-Tiêu chí: tương thích .NET Framework 4.8, chạy được cả x86 và x64. Ưu tiên thư viện managed để giảm rủi ro nạp DLL native.
+Criteria: compatible with .NET Framework 4.8, runs on both x86 and x64. Managed libraries are preferred to reduce native DLL loading risk.
 
-| Package | Dùng ở | Mục đích | Native? | Ghi chú tương thích |
+| Package | Used in | Purpose | Native? | Compatibility notes |
 |---|---|---|---|---|
-| `BouncyCastle.Cryptography` 2.5.1 | Shared | AES-256-GCM, PBKDF2; từ Giai đoạn 4: X25519, Ed25519, HKDF | Không | .NET 4.8 không có `AesGcm`; netstandard2.0 không có `Rfc2898DeriveBytes` với SHA-256 |
-| `System.Security.Cryptography.ProtectedData` | Shared | DPAPI | Không | Chỉ dùng trên Windows |
-| `System.Data.SQLite.Core` 1.0.119 | Data | SQLite | **Có**: `x86\` và `x64\SQLite.Interop.dll` | Có đủ cả hai kiến trúc. Nhúng SQLite 3.46.1, chưa có bản vá CVE-2025-6965, xem `07-BaoCaoKiemThu.md` |
-| `NLog` | Shared, Data, Controller | Logging | Không | Hỗ trợ .NET Framework |
-| `ClosedXML` | Data | Import/Export Excel | Không | Kéo theo OpenXML SDK |
-| `Microsoft.Data.Sqlite` 10.0.14 | Server | Registry thiết bị của Relay, tách khỏi Database của Controller | Có (kèm theo package) | Chỉ dùng trên Server, không ảnh hưởng Windows cũ |
-| `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk` | Tests | Kiểm thử | Không | Chạy bằng `vstest.console` với `/Platform:x86` hoặc `x64` |
+| `BouncyCastle.Cryptography` 2.5.1 | Shared | AES-256-GCM, PBKDF2; from Phase 4: X25519, Ed25519, HKDF | No | .NET 4.8 has no `AesGcm`; netstandard2.0 has no `Rfc2898DeriveBytes` with SHA-256 |
+| `System.Security.Cryptography.ProtectedData` | Shared | DPAPI | No | Windows only |
+| `System.Data.SQLite.Core` 1.0.119 | Data | SQLite | **Yes**: `x86\` and `x64\SQLite.Interop.dll` | Includes both architectures. Embeds SQLite 3.46.1, which lacks the CVE-2025-6965 fix, see `07-BaoCaoKiemThu.md` |
+| `NLog` | Shared, Data, Controller | Logging | No | Supports .NET Framework |
+| `ClosedXML` | Data | Excel Import/Export | No | Pulls in the OpenXML SDK |
+| `Microsoft.Data.Sqlite` 10.0.14 | Server | The Relay's device registry, separate from the Controller's database | Yes (bundled with the package) | Server only, does not affect older Windows |
+| `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk` | Tests | Testing | No | Run with `vstest.console` using `/Platform:x86` or `x64` |
 
-**Không dùng ORM:** Repository viết bằng ADO.NET thuần với tham số hóa; ít phụ thuộc, dễ kiểm soát trên Windows cũ.
+**No ORM:** repositories are written in plain ADO.NET with parameterization; fewer dependencies and easier to control on older Windows.
 
-**Biểu đồ:** tự vẽ bằng GDI+, không thêm thư viện.
+**Charts:** drawn with GDI+, no added library.
 
-**Cần đánh giá ở các giai đoạn sau:** Media Foundation qua P/Invoke cho H.264 (không thêm NuGet nếu được); Inno Setup hoặc WiX cho bộ cài (máy này đã có WiX 5.0.2).
+**To evaluate in later phases:** Media Foundation via P/Invoke for H.264 (no added NuGet if possible); Inno Setup or WiX for the installer (this machine already has WiX 5.0.2).
 
-Phiên bản chính xác được ghi trong từng `.csproj`, và kết quả kiểm tra tương thích thực tế nằm trong `07-BaoCaoKiemThu.md`. Tính tương thích với Windows 7 và Server 2012 mới dựa trên mục tiêu framework của package, **chưa được chạy thử** trên các hệ điều hành đó.
+The exact versions are recorded in each `.csproj`, and real compatibility test results are in `07-BaoCaoKiemThu.md`. Compatibility with Windows 7 and Server 2012 is based only on the packages' target frameworks and **has not been tested** on those operating systems.

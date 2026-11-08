@@ -1,331 +1,331 @@
-# 07 – Báo cáo kiểm thử
+# 07 – Test Report
 
-**Ngày chạy:** 05/11/2026. **Phạm vi:** Giai đoạn 1 đến 5, phiên bản 0.6.0. **Tái hiện:** `.\build\verify.ps1 -OutDir <thư mục>` (mất vài phút, có cửa sổ hiện trên màn hình; script trả exit 1 nếu có cấu hình lỗi).
+**Run date:** 2026-11-05. **Scope:** Phases 1 to 5, version 0.6.0. **Reproduce:** `.\build\verify.ps1 -OutDir <folder>` (takes a few minutes, shows windows on screen; the script returns exit 1 if any configuration fails).
 
-Quy ước theo Phần 18: chỉ ghi **Đạt** cho phần đã thực sự chạy. Phần chưa chạy ghi **Chưa kiểm thử**, không suy đoán.
+Convention per Section 18: record **Pass** only for what actually ran. Anything not run is marked **Not tested**, with no speculation.
 
-## 1. Build và kiểm thử tự động
+## 1. Build and automated tests
 
-Môi trường: Windows 10 Pro 22H2 x64 (build 19045), Visual Studio 2022 17.14.
+Environment: Windows 10 Pro 22H2 x64 (build 19045), Visual Studio 2022 17.14.
 
-| Cấu hình | Build | Lỗi | Test đạt | RDM.exe | SQLite native |
+| Configuration | Build | Errors | Tests passed | RDM.exe | SQLite native |
 |---|---|---|---|---|---|
-| Debug x86 | Thành công | 0 | 251/251 | x86 | x86 |
-| Debug x64 | Thành công | 0 | 251/251 | x64 | x64 |
-| Release x86 | Thành công | 0 | 251/251 | x86 | x86 |
-| Release x64 | Thành công | 0 | 251/251 | x64 | x64 |
+| Debug x86 | Success | 0 | 251/251 | x86 | x86 |
+| Debug x64 | Success | 0 | 251/251 | x64 | x64 |
+| Release x86 | Success | 0 | 251/251 | x86 | x86 |
+| Release x64 | Success | 0 | 251/251 | x64 | x64 |
 
-**Không nằm trong con số trên:** `RealDesktopTests` (chụp màn hình và chuột, bàn phím thật). Nhóm này chưa từng chạy xong, xem mục 3b. Các test phiên trong bộ 241 dùng màn hình và input **giả lập**.
+**Not included in the numbers above:** `RealDesktopTests` (real screen capture and real mouse/keyboard). This group has never run to completion, see section 3b. The session tests in the set of 241 use **simulated** screen and input.
 
-**Cảnh báo còn lại (1):** `NETSDK1233`, VS 2022 không hỗ trợ chính thức .NET 10 cho RDM.Server. Chủ dự án đã chấp nhận.
+**Remaining warning (1):** `NETSDK1233`, VS 2022 does not officially support .NET 10 for RDM.Server. The project owner has accepted this.
 
-**Lỗ hổng thư viện (`dotnet list package --vulnerable`):** không còn gói bị báo. `build-installer.ps1` tự dừng nếu phát hiện. **Máy quét không thấy hết, xem "Rủi ro bảo mật còn mở" ở mục 3c.**
+**Library vulnerabilities (`dotnet list package --vulnerable`):** no package is reported anymore. `build-installer.ps1` stops itself if any is found. **Scanners do not catch everything, see "Open security risks" in section 3c.**
 
-**Đính chính:** báo cáo các lần trước ghi "không có cảnh báo lỗ hổng NuGet". Từ khi thêm `Microsoft.Data.Sqlite` vào Server, điều đó không còn đúng: script build chỉ lọc lỗi nên đã che mất cảnh báo `NU1903` về CVE-2025-6965. Đã vá trên Server; test `Server_RunsPatchedSqlite` chặn SQLite cũ hơn 3.50.2 quay lại.
+**Correction:** earlier reports said "no NuGet vulnerability warnings". Since adding `Microsoft.Data.Sqlite` to the Server, that is no longer true: the build script only filtered errors, so it hid the `NU1903` warning about CVE-2025-6965. Patched on the Server; the `Server_RunsPatchedSqlite` test blocks any SQLite older than 3.50.2 from returning.
 
-Test Relay chạy `RDM.Server.exe` thật qua TCP và TLS thật trên loopback, kể cả khi tiến trình test là x86.
+The Relay tests run the real `RDM.Server.exe` over real TCP and TLS on loopback, even when the test process is x86.
 
-## 2. Ma trận hệ điều hành
+## 2. Operating system matrix
 
-| Hệ điều hành | x86 | x64 |
+| Operating system | x86 | x64 |
 |---|---|---|
-| Windows 10 (build 19045) | **Đạt một phần**: bản x86 chạy qua WOW64 trên Windows x64, chưa chạy trên Windows 10 x86 thật | **Đạt** |
-| Windows 7 SP1 | Chưa kiểm thử | Chưa kiểm thử |
-| Windows 8.1 | Chưa kiểm thử | Chưa kiểm thử |
-| Windows 11 | Không áp dụng | Chưa kiểm thử |
-| Server 2012, 2012 R2, 2016, 2019, 2022, 2025 | Chưa kiểm thử (WOW64) | Chưa kiểm thử |
+| Windows 10 (build 19045) | **Partial Pass**: the x86 build runs under WOW64 on Windows x64; not yet run on real Windows 10 x86 | **Pass** |
+| Windows 7 SP1 | Not tested | Not tested |
+| Windows 8.1 | Not tested | Not tested |
+| Windows 11 | Not applicable | Not tested |
+| Server 2012, 2012 R2, 2016, 2019, 2022, 2025 | Not tested (WOW64) | Not tested |
 
-**Rủi ro lớn nhất còn chưa kiểm chứng:** TLS 1.2 từ Windows 7 tới Relay. Toàn bộ kiểm thử TLS mới chạy Windows 10 ↔ Windows 10 trên loopback.
+**The biggest unverified risk:** TLS 1.2 from Windows 7 to the Relay. All TLS testing so far ran Windows 10 ↔ Windows 10 on loopback.
 
-## 3. Chạy ứng dụng thật
+## 3. Running the real application
 
-**`build\ui-smoke.ps1`** (Controller bản Release): tạo tài khoản, đăng nhập, mở 12 trang, đổi theme.
+**`build\ui-smoke.ps1`** (Controller, Release build): create an account, sign in, open 12 pages, switch theme.
 
-| Bản | Kết quả | Tạo tài khoản + đăng nhập | RAM |
+| Build | Result | Create account + sign in | RAM |
 |---|---|---|---|
-| x86 | Đạt | 5,3 giây | 57 MB |
-| x64 | Đạt | 4,3 giây | 67 MB |
+| x86 | Pass | 5.3 seconds | 57 MB |
+| x64 | Pass | 4.3 seconds | 67 MB |
 
-**`build\e2e-smoke.ps1`** (Relay Server và hai `RDM.exe` thật, thao tác qua giao diện, cả x86 và x64):
+**`build\e2e-smoke.ps1`** (a real Relay Server and two real `RDM.exe`, operated through the interface, both x86 and x64):
 
-| Bước | Kết quả |
+| Step | Result |
 |---|---|
-| Server khởi động với chứng thư sinh bằng `--generate-cert` | Đạt |
-| Client sinh Remote ID, cấu hình qua hộp thoại Settings, lên Online qua TLS | Đạt |
-| Controller tạo tài khoản, cấu hình Relay, thêm thiết bị qua hộp thoại Add Client | Đạt |
-| Controller hiện Online, Dashboard đếm đúng Online 1 / Offline 0 | Đạt |
-| Chủ máy tắt Remote Access, Controller hiện "Online (tắt truy cập)" | Đạt |
-| Kết thúc Client, Controller hiện Offline | Đạt |
-| Tắt Relay, Controller hiện "Chưa rõ" và vẫn phản hồi | Đạt |
+| Server starts with a certificate made by `--generate-cert` | Pass |
+| Client generates a Remote ID, configured via the Settings dialog, goes Online over TLS | Pass |
+| Controller creates an account, configures the Relay, adds a device via the Add Client dialog | Pass |
+| Controller shows Online, Dashboard counts correctly Online 1 / Offline 0 | Pass |
+| Owner turns off Remote Access, Controller shows "Online (access disabled)" | Pass |
+| Terminate the Client, Controller shows Offline | Pass |
+| Stop the Relay, Controller shows "Unknown" and stays responsive | Pass |
 
-Script này kiểm tra bằng thao tác và tiến trình; **trạng thái hiển thị được đối chiếu bằng cách xem ảnh chụp**: toàn bộ các bước ở bản x64 Debug, và các bước Client Online, Offline ở bản x86 Release. Script tự nó không đọc được nội dung ô trong bảng.
+This script checks via operations and processes; **displayed state is verified by looking at screenshots**: all steps on the x64 Debug build, and the Client Online/Offline steps on the x86 Release build. The script itself cannot read cell contents in a grid.
 
-| Kết nối nhanh không đăng nhập; hộp thoại fingerprint; nhập sai bị từ chối | Đạt |
-| Kết nối từ danh sách: khóa đã ghim nên không hỏi lại fingerprint | Đạt |
-| Đăng xuất phần quản lý quay về cửa sổ chính, chương trình không thoát | Đạt |
-| Chủ máy chấp nhận trên Client, mở cửa sổ Remote, phiên E2EE | Đạt |
-| Thanh báo "Đang bị điều khiển" hiện trên máy đích | Đạt |
-| Chủ máy bấm "Ngắt ngay": phiên đóng, Controller báo lý do và không tự kết nối lại | Đạt |
-| Active Sessions và Connection History ghi đúng | Đạt (đối chiếu ảnh ở x64) |
+| Quick connect without sign-in; fingerprint dialog; a wrong entry is refused | Pass |
+| Connect from the list: the key is pinned so the fingerprint is not asked again | Pass |
+| Signing out of the management part returns to the main window; the program does not exit | Pass |
+| Owner accepts on the Client, the Remote window opens, an E2EE session | Pass |
+| The "Being controlled" bar shows on the target machine | Pass |
+| Owner clicks "Disconnect now": the session closes, the Controller reports the reason and does not auto-reconnect | Pass |
+| Active Sessions and Connection History record correctly | Pass (verified via screenshots on x64) |
 
-**Chưa chạy thao tác thật trên giao diện:** hộp chọn file khi Import/Export và Backup/Restore; đổi mật khẩu Client qua hộp thoại; Edit Client; DPI khác 100%; kéo cửa sổ qua màn hình khác DPI; Full Screen; đổi Monitor và chất lượng từ toolbar. Logic phía sau đa số đã có test ở tầng Service.
+**Not yet run through the real interface:** the file picker for Import/Export and Backup/Restore; changing the Client password via its dialog; Edit Client; DPI other than 100%; dragging the window across monitors of different DPI; Full Screen; changing the Monitor and quality from the toolbar. Most of the underlying logic already has tests at the Service layer.
 
-## 3c. Bộ cài đặt (phiên bản 0.6.0)
+## 3c. Installers (version 0.6.0)
 
-Tạo bằng `.\build\build-installer.ps1`, trong `artifacts\installers`. Kiểm tra bằng `.\build\verify-installer.ps1`: bung từng MSI ra thư mục tạm, **không cài vào máy**.
+Built with `.\build\build-installer.ps1`, into `artifacts\installers`. Checked with `.\build\verify-installer.ps1`: each MSI is extracted to a temp folder, **not installed on the machine**.
 
-| Bộ cài | Kích thước | Kiểm tra trên file đã bung |
+| Installer | Size | Checked on the extracted files |
 |---|---|---|
-| `RDM_Setup_x64.exe` | 7,8 MB | Đủ file, đúng kiến trúc, đúng SQLite native, có icon, mở được cửa sổ |
-| `RDM_Setup_x86.exe` | 7,6 MB | Như trên |
-| `RDM_Server_Setup.exe` | 44,2 MB | Đủ file, tự chứa runtime, sinh được chứng thư, trả lời `/health` |
+| `RDM_Setup_x64.exe` | 7.8 MB | All files present, right architecture, right SQLite native, has an icon, opens the window |
+| `RDM_Setup_x86.exe` | 7.6 MB | As above |
+| `RDM_Server_Setup.exe` | 44.2 MB | All files present, self-contained runtime, generates a certificate, answers `/health` |
 
-**Điều kiện cài của bộ cài Server đã đối chứng trên Windows 10:** điều kiện ngược `VersionNT < v10.0` bị chặn đúng, không ghi gì vào máy.
+**The Server installer's launch condition, verified on Windows 10:** the inverse condition `VersionNT < v10.0` is correctly blocked, writing nothing to the machine.
 
-**Giới hạn của `/layout`:** chế độ này không đánh giá điều kiện, nên exit 0 không chứng minh gì về điều kiện cài.
+**Limit of `/layout`:** this mode does not evaluate conditions, so exit 0 proves nothing about the launch condition.
 
-**Chủ dự án đã cài bản trước đó:** `C:\Program Files\RDM\RDM.exe` đang chạy trên máy phát triển, nên cài đặt thực tế có vẻ đã thành công. Đây là quan sát, không phải kiểm thử; nâng cấp lên 0.6.0 chưa được thử.
+**The project owner installed an earlier build:** `C:\Program Files\RDM\RDM.exe` is running on the development machine, so the actual install apparently succeeded. This is an observation, not a test; upgrading to 0.6.0 has not been tried.
 
-**Chưa kiểm thử (cần quyền Administrator và làm thay đổi hệ thống):** cài xong trọn vẹn do người kiểm thử đối chiếu từng mục, giao diện bộ cài, ghi vào Program Files, shortcut, luật tường lửa, tự gỡ bản 0.4.0, nâng cấp, gỡ cài đặt, cài trên máy sạch hay Windows 7.
+**Not tested (requires Administrator and makes system changes):** a full install verified by a tester item by item, the installer UI, writing to Program Files, shortcuts, firewall rules, auto-removing the 0.4.0 build, upgrade, uninstall, install on a clean machine or Windows 7.
 
-**Hành vi đã thiết kế:**
-- Bộ cài kiểm tra .NET Framework 4.8 và phiên bản Windows. **Không kèm** .NET 4.8: thiếu thì báo và dừng.
-- **Bộ cài tự mở tường lửa cho RDM.exe trên mạng Domain và Private**, không mở trên mạng Public. Đây là thay đổi bảo mật trên mọi máy cài.
-- **Bộ cài tự gỡ bản Controller, Client 0.4.0** nếu có. Remote ID và dữ liệu nằm ở `%LOCALAPPDATA%\RDM` nên được giữ lại.
-- **Windows Service không được cài** vì chưa kiểm thử. Quản trị viên tự chạy `RDM.exe --install-service` nếu cần.
-- **Relay Server chỉ cài file**, không tự chạy như dịch vụ Windows.
-- Gỡ cài đặt không đụng dữ liệu người dùng (`%LOCALAPPDATA%\RDM`, `%ProgramData%\RDM\Relay`) và `appsettings.json` của Server được giữ lại.
+**Designed behavior:**
+- The installer checks for .NET Framework 4.8 and the Windows version. It does **not** bundle .NET 4.8: if missing, it reports and stops.
+- **The installer opens the firewall for RDM.exe on the Domain and Private networks**, not on Public. This is a security change on every machine installed.
+- **The installer auto-removes the 0.4.0 Controller/Client** if present. Remote ID and data live in `%LOCALAPPDATA%\RDM` so they are kept.
+- **The Windows Service is not installed** because it is untested. An administrator runs `RDM.exe --install-service` if needed.
+- **The Relay Server only installs files**, it does not run itself as a Windows service.
+- Uninstalling does not touch user data (`%LOCALAPPDATA%\RDM`, `%ProgramData%\RDM\Relay`), and the Server's `appsettings.json` is kept.
 
-**Chưa có chữ ký số.** Windows SmartScreen sẽ cảnh báo, và antivirus có thể chặn vì đây là phần mềm điều khiển từ xa. Không nên phân phối rộng khi chưa ký.
+**No code signing yet.** Windows SmartScreen will warn, and antivirus may block it because this is remote-control software. It should not be distributed widely until signed.
 
-**Rủi ro bảo mật còn mở: SQLite của Controller.** `System.Data.SQLite.Core` 1.0.119 là bản mới nhất trên NuGet và nhúng SQLite **3.46.1**, thấp hơn 3.50.2 là bản vá CVE-2025-6965. Máy quét NuGet không báo gói này. Lỗi cần kẻ tấn công chạy được SQL tùy ý; Controller chỉ dùng câu lệnh cố định có tham số, nên đánh giá rủi ro thực tế thấp. Muốn hết hẳn thì phải đổi driver SQLite. Tạm giữ và theo dõi bản mới theo khuyến nghị; chủ dự án không có ý kiến khác (05/11/2026). Client không dùng SQLite.
+**Open security risk: the Controller's SQLite.** `System.Data.SQLite.Core` 1.0.119 is the latest on NuGet and embeds SQLite **3.46.1**, lower than 3.50.2 which fixes CVE-2025-6965. NuGet scanners do not flag this package. The flaw requires an attacker to run arbitrary SQL; the Controller only uses fixed parameterized statements, so the real-world risk is assessed as low. Fully eliminating it requires changing the SQLite driver. Kept for now and monitored for a new release as recommended; the project owner had no other opinion (2026-11-05). The Client does not use SQLite.
 
-**Lỗi chưa rõ nguyên nhân:** kịch bản e2e bản x86 từng dừng giữa chừng một lần ở phiên bản 0.5.1, sau bước kết nối nhanh. Thông báo lỗi bị mất do bộ lọc output, và `verify.ps1` lúc đó không phát hiện. Lần đó phiên Windows có thể có người đang dùng. Chạy lại 3 lần đều đạt, chưa tái hiện được. `verify.ps1` giờ bắt buộc mọi kịch bản phải báo hoàn tất và thất bại nếu không.
+**Unexplained failure:** the e2e scenario on the x86 build once stopped midway at version 0.5.1, after the quick-connect step. The error message was lost to the output filter, and `verify.ps1` did not catch it at the time. The Windows session may have had a user active then. Three re-runs all passed; not reproduced. `verify.ps1` now requires every scenario to report completion and fails if not.
 
-## 3d. Chuyển tiếp qua Relay (Giai đoạn 5)
+## 3d. Relay forwarding (Phase 5)
 
-**Mọi kết quả dưới đây đều chạy trên một máy, qua loopback.** Chúng chứng minh giao thức và mã chạy đúng, **không** chứng minh chạy được qua Internet.
+**Every result below ran on one machine, over loopback.** They prove the protocol and code work, **not** that they work across the Internet.
 
-| Hạng mục | Kết quả | Cách kiểm |
+| Item | Result | How |
 |---|---|---|
-| Phiên đầy đủ qua Relay: hình, chữ, khung thay đổi | **Đạt** | `RDM.Server.exe` thật, máy đích không lắng nghe cổng nào, màn hình và input giả lập |
-| Từ giao diện thật: trực tiếp không tới được thì tự chuyển sang Relay | **Đạt** (x86, x64) | `e2e-smoke`: hai `RDM.exe`, địa chỉ công bố không tới được, thanh trạng thái hiện `via Relay`; đối chiếu ảnh Connection History ở x64: phiên trước `Direct`, phiên sau `Relay` |
-| Mật khẩu, khóa ghim, công tắc khẩn cấp qua Relay | **Đạt** | Sai mật khẩu bị từ chối; từ chối khóa thì không hỏi chủ máy; chủ máy ngắt thì không tự kết nối lại |
-| 5 phiên đồng thời không lẫn dữ liệu | **Đạt** | Mỗi phiên gửi chữ riêng, kiểm từng máy đích nhận đúng |
-| Vé: dùng lại, bịa, hết hạn | **Đạt** | Đều bị từ chối |
-| Trả lời đúng trạng thái: không tồn tại, Offline, tắt truy cập, tự kết nối chính mình | **Đạt** | Mã tương ứng, không phát vé |
-| Giới hạn: yêu cầu mỗi phút, số phiên đồng thời | **Đạt** | Cấu hình thấp rồi vượt ngưỡng |
-| Một đầu rời đi, bên nhận không đọc | **Đạt** | Relay đóng phiên. Test bên nhận không đọc đã được đối chứng: bỏ bản sửa thì test thất bại |
-| Log Relay không chứa nội dung phiên, tên người dùng | **Đạt** | Quét output của Server |
-| Thông lượng Relay trên loopback | **~76–78 MB/s** | Khối 256 KB, **chưa tính E2EE**, cả bốn cấu hình. Chỉ là giới hạn trên của phần chuyển tiếp |
+| Full session over the Relay: image, text, changing frames | **Pass** | Real `RDM.Server.exe`, the target machine listens on no port, simulated screen and input |
+| From the real interface: direct unreachable, auto-switches to Relay | **Pass** (x86, x64) | `e2e-smoke`: two `RDM.exe`, the advertised address unreachable, the status bar shows `via Relay`; Connection History screenshot verified on x64: earlier session `Direct`, later session `Relay` |
+| Password, pinned key, emergency switch over the Relay | **Pass** | Wrong password refused; refusing the key does not prompt the owner; owner disconnect does not auto-reconnect |
+| 5 concurrent sessions without data mixing | **Pass** | Each session sends its own text, each target verified to receive the right one |
+| Tickets: reuse, forged, expired | **Pass** | All refused |
+| Correct status replies: non-existent, Offline, access disabled, connecting to self | **Pass** | Correct codes, no ticket issued |
+| Limits: requests per minute, concurrent sessions | **Pass** | Configured low then exceeded the threshold |
+| One end leaves, the receiver does not read | **Pass** | The Relay closes the session. The "receiver does not read" test was verified: removing the fix makes the test fail |
+| Relay log contains no session content or usernames | **Pass** | Scanned the Server output |
+| Relay throughput on loopback | **~76–78 MB/s** | 256 KB blocks, **E2EE not included**, all four configurations. Only an upper bound for the forwarding part |
 
-**Chưa kiểm thử:**
-- **Qua Internet, NAT, tường lửa, router thật, hai máy khác nhau.**
-- Mất mạng giữa phiên qua Relay; đổi mạng khi đang kết nối.
-- FPS và độ trễ qua Relay trên mạng thật. **Băng thông thực tế của Relay chưa đo.**
-- Relay chịu tải: mới có 5 phiên đồng thời. `MaxRelaySessions` 1000 là giới hạn cấu hình, chưa phải năng lực đã kiểm chứng.
-- **Relay chạy như dịch vụ Windows:** có mã và có hướng dẫn, chưa từng chạy.
-- Trực tiếp qua địa chỉ thật trong LAN khi có Relay: chỉ thử với địa chỉ không tới được.
+**Not tested:**
+- **Over the Internet, NAT, firewalls, real routers, two different machines.**
+- Network loss mid-session over the Relay; changing networks while connected.
+- FPS and latency over the Relay on a real network. **The Relay's real bandwidth has not been measured.**
+- Relay under load: only 5 concurrent sessions so far. `MaxRelaySessions` 1000 is a configuration limit, not a tested capacity.
+- **The Relay running as a Windows service:** coded and documented, never run.
+- Direct via a real LAN address while a Relay is present: only tried with an unreachable address.
 
-**Không có TCP hole punching.** Phần 19 có "NAT Traversal": hiện chỉ đạt theo nghĩa kết nối ra ngoài qua Relay, không có xuyên NAT trực tiếp. Muốn tiết kiệm băng thông Relay thì cần giai đoạn riêng, có thể cần máy chủ phối hợp và vẫn không chắc thành công với NAT đối xứng.
+**No TCP hole punching.** Section 19 has "NAT Traversal": currently achieved only in the sense of outbound connections through the Relay, with no direct NAT traversal. Saving Relay bandwidth would need a separate phase, possibly a coordination server, and still would not be guaranteed with symmetric NAT.
 
-## 3e. Relay đóng gói sẵn (phiên bản 0.6.1)
+## 3e. Pre-packaged Relay (version 0.6.1)
 
-Bản Release mang sẵn `erp247.ddns.net:31408`, khóa ghim và mã đăng ký; bản Debug không có. Cổng 443 trên máy chủ đang do Caddy phục vụ website khác nên Relay dùng cổng riêng.
+The Release build carries `erp247.ddns.net:31408`, the pinned key and the enrollment code; the Debug build does not. Port 443 on the server is already served by Caddy for another website, so the Relay uses its own port.
 
-**Đã kiểm tra:**
-- 251/251 trên 4 cấu hình; e2e và ui-smoke đạt trên x86 và x64.
-- Áp dụng một lần, giữ Relay của chủ máy, xóa rồi không tự điền lại: có test.
-- Chuỗi Relay có trong `RDM.Client.dll` bản Release, không có trong bản Debug. Script e2e đặt `RDM_NO_RELAY_DEFAULTS=1` để không chạm Relay thật.
-- Relay nạp chứng thư thật và nghe trên loopback, nhật ký báo đúng khóa ghim, hạn 2036-11-02.
+**Checked:**
+- 251/251 on 4 configurations; e2e and ui-smoke pass on x86 and x64.
+- Applied once, keeping the owner's Relay, cleared and not re-filled: there is a test.
+- The Relay string is in `RDM.Client.dll` in the Release build, absent in Debug. The e2e script sets `RDM_NO_RELAY_DEFAULTS=1` so it does not touch the real Relay.
+- The Relay loads the real certificate and listens on loopback; the log reports the right pinned key, expiring 2036-11-02.
 
-**Chưa kiểm tra:**
-- `build\deploy-relay.ps1` chưa từng chạy, vì cần quyền Administrator: cài dịch vụ, chạy bằng LocalService, mở tường lửa.
-- Chuyển cổng router, thiết bị thật đăng ký và phiên qua `erp247.ddns.net:31408`. Thiết bị thật chưa bao giờ đăng ký với Relay này.
-- Mã đóng gói áp dụng trên bản cài thật; test chỉ gọi trực tiếp hàm.
+**Not checked:**
+- `build\deploy-relay.ps1` has never run, because it needs Administrator: installing the service, running as LocalService, opening the firewall.
+- Router port forwarding, a real device registering and a session over `erp247.ddns.net:31408`. No real device has ever registered with this Relay.
+- The packaging code applied to a real install; the test only calls the function directly.
 
-**Vấn đề còn mở:**
-- Một lần nghiệm thu có `e2e-smoke x64` kết thúc không in dòng nào, trong vòng 4 giây sau ui-smoke. Không có sự cố trong nhật ký Windows, chưa rõ nguyên nhân. Chạy lại ngay sau đó 3/3 đạt. Kịch bản dừng trước cả bước khởi động Relay, nhưng không loại trừ được hoàn toàn lỗi môi trường liên quan tới phần mềm trên máy. Sau đó Kaspersky báo `PDM:Trojan.Win32.Generic` trên `build\e2e-smoke.ps1` và file này biến mất khỏi đĩa: có thể cùng nguyên nhân, chưa chứng minh. Chưa rõ RDM.exe có bị phát hiện tương tự trên máy khác hay không.
-- Máy này có Kaspersky. PowerShell dò cổng thấy chứng thư RSA tự ký khác, cùng tên, thumbprint đổi mỗi lần: nghi là tính năng quét kết nối mã hóa, chưa chứng minh. RDM từ chối mọi chứng thư sai khóa ghim, nên máy có phần mềm chặn TLS kiểu này sẽ không kết nối được Relay cho tới khi loại trừ RDM.exe.
-- Mã đăng ký nằm trong bộ cài nên ai có bộ cài cũng trích xuất được; thu hồi thì phải cài lại mọi máy.
+**Open issues:**
+- One acceptance run had `e2e-smoke x64` end printing nothing, within 4 seconds after ui-smoke. No incident in the Windows log, cause unknown. Re-running immediately after passed 3/3. The scenario stopped even before the Relay-start step, but a machine-software-related environment fault cannot be fully ruled out. Kaspersky then reported `PDM:Trojan.Win32.Generic` on `build\e2e-smoke.ps1` and the file vanished from disk: possibly the same cause, not proven. Whether RDM.exe is similarly detected on another machine is unknown.
+- This machine has Kaspersky. A PowerShell port probe saw a different self-signed RSA certificate with the same name and a thumbprint that changes each time: suspected to be an encrypted-connection scanning feature, not proven. RDM refuses any certificate with the wrong pinned key, so a machine with this kind of TLS-interception software will not connect to the Relay until RDM.exe is excluded.
+- The enrollment code is in the installer, so anyone with the installer can extract it; revoking it requires reinstalling every machine.
 
-**Chế độ Managed (0.6.3):** bản Release có cấu hình đóng gói không hiện tên miền, cổng, khóa ghim, mã đăng ký hay chữ Relay/Server trên giao diện; đường truyền hiện là `Internet`. Mỗi lần khởi động đều áp lại cấu hình đóng gói, thay cho quy tắc "chỉ một lần" của 0.6.1. Kết quả: 251/251 trên Debug x86, Debug x64 và Release x86; Release x64 250/251. Test hỏng là `LanDiscoveryTests.FindsRightId_ReturnsSessionPort` (hết thời gian chờ 3 giây); chạy lại riêng nhóm này 8/8 đạt. Truy vấn chỉ gửi một gói UDP, không gửi lại, nên mất gói là không tìm thấy; nguyên nhân mất gói chưa xác định. **Chưa kiểm tra giao diện Managed bằng mắt hay bằng script**, vì `ui-smoke` và `e2e-smoke` không được chạy do cảnh báo Kaspersky. File log vẫn có chữ "Relay" nhưng không ghi tên miền. Tên miền vẫn tìm được bằng công cụ xem kết nối mạng hoặc đọc file DLL.
+**Managed mode (0.6.3):** the Release build has packaged configuration that does not show the domain, port, pinned key, enrollment code or the word Relay/Server in the interface; the transport shows as `Internet`. Every startup re-applies the packaged configuration, replacing the "once only" rule of 0.6.1. Result: 251/251 on Debug x86, Debug x64 and Release x86; Release x64 250/251. The failing test was `LanDiscoveryTests.FindsRightId_ReturnsSessionPort` (3-second timeout); re-running just that group passed 8/8. The query sends only one UDP packet with no retry, so a lost packet means not found; the cause of the packet loss was not determined. **The Managed interface has not been checked by eye or by script**, because `ui-smoke` and `e2e-smoke` were not run due to the Kaspersky warning. The log file still contains the word "Relay" but does not record the domain. The domain can still be found with a network-connection viewer or by reading the DLL file.
 
-**Giao diện khay và Remember password (0.6.5):** máy bị điều khiển bỏ thanh đỏ và bong bóng, chỉ còn chỉ báo lặng trên biểu tượng khay của cửa sổ chính (chú thích "Being controlled by …" và lệnh Disconnect) — vẫn công khai, không phải cảnh báo bật lên. Đóng cửa sổ chỉ thu nhỏ xuống khay; thoát hẳn qua menu Exit. Hộp đăng nhập có ô "Remember password" (lưu bằng DPAPI theo tài khoản Windows). Bản Managed bỏ ô cổng trong Settings. Chưa kiểm tra giao diện bằng mắt hay script.
+**Tray interface and Remember password (0.6.5):** the controlled machine drops the red bar and the balloon, leaving only a quiet indicator on the main window's tray icon (a "Being controlled by …" tooltip and a Disconnect command) — still public, not a pop-up alert. Closing the window only minimizes to the tray; full exit is via the Exit menu. The sign-in box has a "Remember password" option (stored by DPAPI per Windows account). The Managed build removes the port field in Settings. The interface has not been checked by eye or by script.
 
-**Giai đoạn 6 - File Transfer và Chat (0.7.0):** chat và truyền file đi trên cùng kênh E2EE của phiên, không mở cổng mới. File nhận về lưu vào `Documents\RDM Received Files`, tên file bị cắt chỉ còn phần tên (chặn vượt thư mục), không ghi đè, không chạy. Phía nhận tự nhận vì phiên đã xác thực; hai bên đều thấy trong bảng chat. Máy điều khiển: menu khay có "Send File..." và "Chat" (bảng chat gắn bên phải cửa sổ). Máy bị điều khiển: cửa sổ chat tự mở khi có tin hoặc file. Kiểm thử engine (`SessionTransferTests`) 5/5: chat tới nơi; file 300 KB nguyên vẹn; tên vượt thư mục bị cắt về đúng thư mục nhận; không ghi đè (đổi thành "(1)"); khúc dữ liệu quá lớn bị từ chối. **Chưa kiểm tra giao diện chat/file bằng mắt hay giữa hai máy thật.**
+**Phase 6 - File Transfer and Chat (0.7.0):** chat and file transfer run on the session's existing E2EE channel, opening no new port. Received files are saved to `Documents\RDM Received Files`, the filename trimmed to its name only (preventing directory traversal), never overwriting, never executed. The receiver accepts automatically because the session is authenticated; both sides see it in the chat panel. On the controller: the tray menu has "Send File..." and "Chat" (the chat panel docks to the right of the window). On the controlled machine: the chat window opens when a message or file arrives. The engine tests (`SessionTransferTests`) pass 5/5: chat arrives; a 300 KB file intact; a traversal name trimmed to the correct receive folder; no overwrite (changed to "(1)"); an oversized chunk refused. **The chat/file interface has not been checked by eye or between two real machines.**
 
-**Trình quản lý file, chat đẹp hơn, nhiều màn hình (0.8.0):**
-- Truyền file kiểu AnyDesk: cửa sổ File Manager hai khung (máy điều khiển trái, máy ở xa phải), duyệt thư mục/ổ đĩa của máy ở xa, Upload/Download. Giao thức duyệt thư mục (FsList/FsListReply/FsGet) và truyền file có thư mục đích đi trên cùng kênh E2EE. Theo yêu cầu, máy bị điều khiển **không hiển thị gì** khi truyền file (chỉ chat mới mở cửa sổ). File vẫn lưu an toàn: tên bị cắt chống vượt thư mục, không ghi đè, không tự chạy; thư mục đích là đường dẫn tuyệt đối do người dùng duyệt tới (toàn quyền hệ thống như AnyDesk, giới hạn theo quyền của tài khoản đang đăng nhập).
-- Chat vẽ lại kiểu bong bóng, có thanh tiêu đề và nút đóng.
-- Nhiều màn hình: thanh nút nổi ở đáy cửa sổ Remote (1, 2, ..., All) và phím tắt Ctrl+1..9 chọn màn hình, Ctrl+0 xem tất cả. Mục "All Monitors" chụp toàn vùng ảo, thêm tự động ở máy đích khi có từ 2 màn hình.
-- Kiểm thử engine 8/8 (thêm: duyệt thư mục trả đúng mục, upload lưu đúng thư mục đích, download về đúng thư mục local).
-- **Chưa kiểm tra giao diện các phần này bằng mắt hay giữa hai máy thật.** Bảo mật truyền file: hiện tự nhận, chưa có bước hỏi đồng ý từng file.
+**File manager, nicer chat, multiple monitors (0.8.0):**
+- AnyDesk-style file transfer: a two-pane File Manager window (controller on the left, remote on the right), browsing the remote machine's folders/drives, with Upload/Download. The folder-browsing protocol (FsList/FsListReply/FsGet) and file transfer with a target folder run on the same E2EE channel. As required, the controlled machine **shows nothing** during a file transfer (only chat opens a window). Files are still saved safely: the name is trimmed against traversal, no overwrite, no auto-run; the target folder is an absolute path the user browsed to (full system access like AnyDesk, limited by the permissions of the signed-in account).
+- Chat redrawn as bubbles, with a title bar and a close button.
+- Multiple monitors: a floating button bar at the bottom of the Remote window (1, 2, ..., All) and shortcuts Ctrl+1..9 to choose a monitor, Ctrl+0 to view all. "All Monitors" captures the whole virtual area, added automatically on the target when there are 2 or more monitors.
+- Engine tests 8/8 (added: browsing returns the right entries, upload saves to the right target folder, download lands in the right local folder).
+- **The interface of these parts has not been checked by eye or between two real machines.** File-transfer security: currently auto-accepts, with no per-file consent step yet.
 
-**Thoát toàn màn hình (0.7.0):** ở chế độ full không còn thanh công cụ, nên thêm phím F11 (chặn tại máy điều khiển, không gửi sang máy đích) và nút nổi "Exit Full Screen" ở mép trên; menu khay vẫn có mục Full Screen.
+**Exit full screen (0.7.0):** in full-screen mode there is no toolbar, so an F11 key was added (intercepted at the controller, not sent to the target) and a floating "Exit Full Screen" button at the top edge; the tray menu still has the Full Screen item.
 
-**Lỗi cạnh tranh ở công tắc khẩn cấp (sửa 0.6.5):** khi chủ máy ngắt, máy chủ gửi khung "owner ended" rồi đóng socket ngay; ở bản Release, socket bị đóng (kèm RST) trước khi khung tới nơi, nên Controller nhận nhầm là mất kết nối (byUser=false) và có thể tự kết nối lại. Chặn kết nối mới (OwnerBlock) vẫn chặn được, nhưng tín hiệu "có chủ ý" không đáng tin. `OwnerDisconnectAll_EndsSession_AndReleasesInput` hỏng 100% ở Release (cả x86 và x64), đạt ở Debug. Sửa: sau khi gửi khung, chờ ngắn để Controller đọc xong và tự đóng trước (đóng nhẹ nhàng). Sau khi sửa: 10/10 ở cả Release x86 và x64.
+**Race condition in the emergency switch (fixed in 0.6.5):** when the owner disconnects, the host sends an "owner ended" frame then closes the socket immediately; in the Release build, the socket was closed (with RST) before the frame arrived, so the Controller mistook it for a connection loss (byUser=false) and could auto-reconnect. The new-connection block (OwnerBlock) still held, but the "intentional" signal was unreliable. `OwnerDisconnectAll_EndsSession_AndReleasesInput` failed 100% in Release (both x86 and x64), passed in Debug. Fix: after sending the frame, wait briefly for the Controller to finish reading and close first (a graceful close). After the fix: 10/10 on both Release x86 and x64.
 
-**Lỗi phát hiện và sửa trong đợt này:**
-- `--hash-token` nhận BOM khi PowerShell 5.1 chuyển qua đường ống, làm sai mã băm và Relay sẽ từ chối mọi thiết bị mới. Đã xác nhận bằng so sánh SHA-256 và sửa ở cả hai phía.
-- Controller có thể hiện Online sai nếu tin Offline gửi trước ảnh chụp cũ. Phát hiện khi đọc mã, đã sửa thứ tự gửi; không có test tái hiện đúng thời điểm này.
-- `Controller_SnapshotIncludesOfflineRegisteredDevices` và e2e dựa vào thời gian chờ cố định: đổi sang chờ theo điều kiện.
+**Bugs found and fixed in this round:**
+- `--hash-token` received a BOM when PowerShell 5.1 piped it through, corrupting the hash so the Relay would refuse every new device. Confirmed by SHA-256 comparison and fixed on both sides.
+- The Controller could show Online incorrectly if an Offline message arrived before an older snapshot. Found during code reading, the send order was fixed; no test reproduces this exact timing.
+- `Controller_SnapshotIncludesOfflineRegisteredDevices` and e2e relied on fixed waits: changed to condition-based waiting.
 
-## 3b. Màn hình và input thật: phần quan trọng nhất còn thiếu
+## 3b. Real screen and input: the most important missing part
 
-| Hạng mục | Trạng thái |
+| Item | Status |
 |---|---|
-| Chụp màn hình thật, qua E2EE, hiển thị trên Controller | **Đạt một phần:** thấy được một lần trong lần chạy `e2e-smoke` bản x86 Release, trên một màn hình 1920x1200. Không có phép đo |
-| **Chuột thật qua SendInput** | **Chưa kiểm thử** |
-| **Bàn phím thật, tổ hợp phím, tiếng Việt, Unikey** | **Chưa kiểm thử** |
-| **Low-level hook, Alt+Tab, phím Windows** | **Chưa kiểm thử** |
-| **FPS trên màn hình đang thay đổi** (mục tiêu 15–30) | **Chưa đo.** Lần duy nhất thấy được là màn hình gần như đứng yên |
-| Nhiều màn hình | **Chưa kiểm thử** (chỉ có test với màn hình giả) |
-| Khi phiên Windows bị ngắt khỏi màn hình | **Đạt:** không lỗi, Controller báo rõ tình trạng |
+| Real screen capture, over E2EE, displayed on the Controller | **Partial Pass:** seen once during an `e2e-smoke` run of the x86 Release build, on a single 1920x1200 monitor. No measurement |
+| **Real mouse via SendInput** | **Not tested** |
+| **Real keyboard, key combos, Vietnamese, Unikey** | **Not tested** |
+| **Low-level hook, Alt+Tab, Windows key** | **Not tested** |
+| **FPS on a changing screen** (target 15–30) | **Not measured.** The only time it was seen, the screen was nearly static |
+| Multiple monitors | **Not tested** (only tested with a simulated screen) |
+| When the Windows session is disconnected from the display | **Pass:** no error, the Controller reports the state clearly |
 
-Lý do: trong phần lớn thời gian kiểm thử, phiên Windows bị ngắt khỏi màn hình (Session 1, console ở Session 4), nên BitBlt bị từ chối. Test input thật không được chạy tự động vì nếu người dùng đang dùng máy, chữ thử nghiệm có thể bị gõ vào ứng dụng khác.
+Reason: for most of the testing, the Windows session was disconnected from the display (Session 1, console on Session 4), so BitBlt was refused. Real input tests are not run automatically because, if a user is at the machine, the test text could be typed into another application.
 
-**Cách hoàn tất:** khi đang ngồi ở máy, không có việc gì đang dở, chạy `.\build\real-desktop-test.ps1` rồi `.\build\real-desktop-test.ps1 -Platform x86`. Chuột sẽ di chuyển khoảng 10 giây. Test in ra số FPS đo được.
+**How to complete it:** while sitting at the machine with nothing in progress, run `.\build\real-desktop-test.ps1` then `.\build\real-desktop-test.ps1 -Platform x86`. The mouse will move for about 10 seconds. The test prints the measured FPS.
 
-**Windows Service (`--install-service`): chưa từng chạy.** Cần quyền Administrator và là thay đổi hệ thống, nên không tự cài lên máy phát triển. Gồm cả Ctrl+Alt+Del qua `SendSAS` và khởi chạy Agent trong phiên người dùng. Nên thử trên máy ảo.
+**Windows Service (`--install-service`): never run.** It needs Administrator and is a system change, so it is not auto-installed on the development machine. It includes Ctrl+Alt+Del via `SendSAS` and launching the Agent in the user session. Best tried on a VM.
 
-**Không phải hai máy khác nhau:** mọi tiến trình chạy trên cùng một máy qua loopback. Tiêu chí Phần 19 "hai máy tính Windows khác nhau" và NAT, tường lửa thật vẫn chưa kiểm thử.
+**Not two different machines:** every process ran on one machine over loopback. The Section 19 criterion of "two different Windows computers" and real NAT/firewalls remains untested.
 
-## 4. Hiệu năng đo được
+## 4. Measured performance
 
-| Chỉ số | x86 | x64 |
+| Metric | x86 | x64 |
 |---|---|---|
-| PBKDF2 600.000 vòng, một lần băm | ~2,0–2,3 giây | ~1,7–1,8 giây |
-| Import 5.000 thiết bị | ~0,75 giây | ~0,9 giây |
-| Đọc 5.000 thiết bị | ~65 ms | ~75 ms |
-| Tìm kiếm trong 5.000 thiết bị | 5–7 ms | 7–8 ms |
+| PBKDF2 600,000 iterations, one hash | ~2.0–2.3 seconds | ~1.7–1.8 seconds |
+| Import 5,000 devices | ~0.75 seconds | ~0.9 seconds |
+| Read 5,000 devices | ~65 ms | ~75 ms |
+| Search within 5,000 devices | 5–7 ms | 7–8 ms |
 
-| Thông lượng kênh E2EE (khối 256 KB, loopback) | ~12 MB/s | ~16 MB/s |
-| Thông lượng Relay, chưa tính E2EE (khối 256 KB, loopback) | ~77 MB/s | ~76 MB/s |
+| E2EE channel throughput (256 KB blocks, loopback) | ~12 MB/s | ~16 MB/s |
+| Relay throughput, E2EE excluded (256 KB blocks, loopback) | ~77 MB/s | ~76 MB/s |
 
-Thông lượng này đo riêng kênh mã hóa bằng AES-GCM của BouncyCastle (mã managed). Đủ cho ảnh JPEG thông thường, nhưng có thể là nút thắt ở chế độ "Không mất" (PNG) hoặc màn hình độ phân giải cao. Cần đo thực tế (mục 3b) trước khi quyết định có đổi sang AES của CNG hay không.
+This throughput measures only the encrypted channel using BouncyCastle's AES-GCM (managed code). Enough for ordinary JPEG images, but it may be the bottleneck in "Lossless" mode (PNG) or on high-resolution screens. Real measurement is needed (section 3b) before deciding whether to switch to CNG's AES.
 
-Phần chuyển tiếp nhanh hơn kênh E2EE nhiều lần, nên trên một phiên, E2EE mới là nút thắt, không phải Relay.
+The forwarding part is many times faster than the E2EE channel, so within one session E2EE is the bottleneck, not the Relay.
 
-**Chưa đo:** FPS thực tế; băng thông trên mạng thật; Relay chịu tải nhiều kết nối. `MaxConnections` mặc định 10.000 là giới hạn cấu hình, chưa phải năng lực đã kiểm chứng.
+**Not measured:** real FPS; bandwidth on a real network; the Relay under many connections. The `MaxConnections` default of 10,000 is a configuration limit, not a tested capacity.
 
-## 5. Kiểm thử bảo mật (Phần 8.9)
+## 5. Security testing (Section 8.9)
 
-| Hạng mục | Kết quả | Nội dung đã kiểm |
+| Item | Result | What was checked |
 |---|---|---|
-| SQL Injection | **Đạt** | Controller: ô tìm kiếm, trường lưu trữ. Relay: Remote ID độc hại |
-| Brute Force | **Đạt** | Controller khóa sau 5 lần sai. Client khóa 15 phút, giữ nguyên khi khởi động lại. Relay chặn IP, kể cả token đúng |
-| Unauthorized Access | **Đạt** | Gọi thẳng Service bằng vai trò thấp; Controller sai token; thiết bị thiếu mã đăng ký |
-| Database Theft | **Đạt** | File DB, WAL và file trạng thái Client không có secret dạng rõ. Máy khác không mở được khóa (**giả lập**) |
-| MITM (Controller/Client ↔ Relay) | **Đạt** | Chứng thư không tin cậy, sai khóa ghim đều bị từ chối |
-| MITM trên kênh E2EE | **Đạt** | Proxy tráo khóa tạm bị chữ ký phát hiện. Kẻ giả mạo có khóa hợp lệ bị khóa ghim chặn, **trước khi** bằng chứng mật khẩu được gửi |
-| Relay không đọc được nội dung | **Đạt** | Quét toàn bộ dữ liệu qua proxy: không có tên người dùng, mật khẩu, chữ gõ, ảnh JPEG dạng rõ |
-| Certificate Validation | **Đạt một phần** | Tin cậy, khóa ghim, sai hostname dù đúng ghim. **Chưa kiểm:** chứng thư hết hạn, thu hồi, chuỗi CA thật |
-| Replay Attack | **Đạt** | Phát lại chữ ký đăng ký; bằng chứng mật khẩu gắn transcript; phát lại gói lệnh trong phiên làm phiên bị đóng và lệnh không chạy hai lần |
-| Sửa, xóa, chèn gói trong phiên (bổ sung) | **Đạt** | Lật bit, xóa một gói, chèn khung không mã hóa: phiên bị đóng, lệnh không thực thi |
-| Đổi khóa phiên (bổ sung) | **Đạt** | Đổi khóa trong suốt khi đang truyền |
-| Công tắc khẩn cấp (bổ sung) | **Đạt** | Chủ máy ngắt thì Controller không tự kết nối lại; Unattended đúng mật khẩu cũng bị chặn 60 giây |
-| Ghim khóa Controller (bổ sung) | **Đạt** | Operator không bỏ ghim được; khóa đổi bị Audit mức Critical. **Chưa kiểm thử qua giao diện:** cảnh báo khi khóa đã ghim thay đổi |
-| Chiếm Remote ID (bổ sung) | **Đạt** | Khóa khác bị từ chối, cả sau khi Relay khởi động lại |
-| TLS cũ (bổ sung) | **Đạt** | Server từ chối TLS 1.1 |
-| Khung tin độc hại (bổ sung) | **Đạt** | Khung khổng lồ trước xác thực bị đóng; 3.000 mẫu rác chỉ gây lỗi giao thức |
-| Log không chứa bí mật | **Đạt** | Log Relay không có token, kể cả token sai |
-| File Tampering (bản mã) | **Đạt** | Lật từng bit, chép bản mã sang dòng khác, file trạng thái Client bị sửa |
-| Key Rotation | **Đạt** | Đọc lại đúng, khóa thu hồi bị từ chối, rollback khi lỗi |
-| Backup/Restore Security | **Đạt** | Sai mật khẩu, lật bit, file rác; phục hồi sang máy khác (**giả lập**) |
-| CSV/Formula Injection (bổ sung) | **Đạt** | Ô công thức được vô hiệu hóa khi Export |
-| Test vector chuẩn (bổ sung) | **Đạt** | AES-256-GCM, PBKDF2-HMAC-SHA256, Ed25519 (RFC 8032) |
-| Session Hijacking | **Đạt một phần** | Mọi gói đều cần khóa phiên riêng; vé dùng lại, bịa, hết hạn bị từ chối. Chưa có kịch bản kẻ tấn công lấy được vé còn hạn rồi vào trước máy thật (theo thiết kế chỉ gây lỗi kết nối, xem `04-Security.md`) |
-| Từ chối dịch vụ qua Relay (bổ sung) | **Đạt một phần** | Giới hạn yêu cầu, số phiên, vé hết hạn, bên nhận không đọc. **Chưa kiểm:** thiết bị đã đăng ký dùng hết băng thông, nhiều thiết bị cùng dò Remote ID |
-| Token Theft | **Chưa kiểm thử** | Thiết bị không dùng token. Token Controller chưa có cơ chế thu hồi |
-| Path Traversal | **Chưa kiểm thử** | Thuộc Giai đoạn 6, chưa có mã |
+| SQL Injection | **Pass** | Controller: search box, storage fields. Relay: malicious Remote ID |
+| Brute Force | **Pass** | Controller locks after 5 failures. Client locks 15 minutes, persisted across restart. Relay blocks IPs, even with the right token |
+| Unauthorized Access | **Pass** | Calling the Service directly with a low role; Controller with the wrong token; a device missing the enrollment code |
+| Database Theft | **Pass** | The DB file, WAL and Client state file have no plaintext secrets. Another machine cannot unlock the key (**simulated**) |
+| MITM (Controller/Client ↔ Relay) | **Pass** | An untrusted certificate and a wrong pinned key are both refused |
+| MITM on the E2EE channel | **Pass** | A proxy swapping a temporary key is caught by the signature. An impersonator with a valid key is blocked by key pinning, **before** the password proof is sent |
+| Relay cannot read content | **Pass** | Scanned all data through the proxy: no plaintext usernames, passwords, keystrokes, JPEG images |
+| Certificate Validation | **Partial Pass** | Trust, pinned key, wrong hostname despite the right pin. **Not checked:** expired certificate, revocation, a real CA chain |
+| Replay Attack | **Pass** | Replaying the enrollment signature; the password proof bound to the transcript; replaying a command packet in a session closes the session and the command does not run twice |
+| Modify, drop, inject packets in a session (added) | **Pass** | Flip bits, drop a packet, inject an unencrypted frame: the session closes, the command does not execute |
+| Session rekey (added) | **Pass** | Transparent rekey while transmitting |
+| Emergency switch (added) | **Pass** | Owner disconnect: the Controller does not auto-reconnect; Unattended with the right password is still blocked for 60 seconds |
+| Controller key pinning (added) | **Pass** | An Operator cannot unpin; a changed key is Audited at Critical. **Not tested via the interface:** the warning when a pinned key changes |
+| Remote ID takeover (added) | **Pass** | A different key is refused, even after the Relay restarts |
+| Old TLS (added) | **Pass** | The Server refuses TLS 1.1 |
+| Malicious frames (added) | **Pass** | A huge frame before authentication is closed; 3,000 garbage samples only cause a protocol error |
+| Logs contain no secrets | **Pass** | The Relay log has no tokens, even wrong ones |
+| File Tampering (ciphertext) | **Pass** | Flip each bit, copy ciphertext to another row, a tampered Client state file |
+| Key Rotation | **Pass** | Reads back correctly, the revoked key is refused, rollback on failure |
+| Backup/Restore Security | **Pass** | Wrong password, flipped bits, a garbage file; restore to another machine (**simulated**) |
+| CSV/Formula Injection (added) | **Pass** | Formula cells are neutralized on Export |
+| Standard test vectors (added) | **Pass** | AES-256-GCM, PBKDF2-HMAC-SHA256, Ed25519 (RFC 8032) |
+| Session Hijacking | **Partial Pass** | Every packet needs its own session key; reused, forged, expired tickets are refused. No scenario yet where an attacker obtains a valid ticket and enters ahead of the real machine (by design this only causes a connection error, see `04-Security.md`) |
+| Denial of service via the Relay (added) | **Partial Pass** | Request limits, session count, ticket expiry, receiver not reading. **Not checked:** a registered device using up all bandwidth, many devices enumerating Remote IDs together |
+| Token Theft | **Not tested** | Devices do not use tokens. The Controller token has no revocation mechanism yet |
+| Path Traversal | **Not tested** | Belongs to Phase 6, no code yet |
 
-Đây là kiểm thử do chính nhóm phát triển viết, chưa phải đánh giá bảo mật độc lập.
+This is testing written by the development team itself, not yet an independent security assessment.
 
-## 6. Tiến độ theo Phần 18
+## 6. Progress against Section 18
 
-| Mục | Trạng thái | Mục | Trạng thái |
+| Item | Status | Item | Status |
 |---|---|---|---|
-| Cài đặt, gỡ cài đặt | Chưa có mã | Khởi động | Đạt (Windows 10) |
-| Đăng ký Remote ID | Đạt (loopback) | SQLite | Đạt (Windows 10) |
-| Mã hóa dữ liệu | Đạt (lưu trữ) | Quản lý mật khẩu | Đạt |
-| Online/Offline | Đạt (loopback) | Authentication | Đạt (Relay, cục bộ) |
-| TLS | Đạt (tới Relay, loopback) | E2EE | Đạt (loopback, kể cả qua proxy tấn công) |
-| Kết nối LAN, Internet | **Chưa kiểm thử trên mạng thật.** Relay đạt trên loopback (mục 3d) | Screen | Đạt một phần (mục 3b) |
-| Mouse, Keyboard | **Chưa kiểm thử với input thật** (mục 3b) | | |
-| File Transfer, Chat | Chưa có mã | Multi-Monitor | Chưa có mã |
-| Multi-Session | Nhiều phiên qua một Relay: đạt trên loopback. Nhiều Controller vào một máy: chưa hỗ trợ | | |
-| Reconnect | Đạt (tới Relay); phiên: chưa thử mất mạng thật | Backup/Restore, Audit Log | Đạt |
+| Install, uninstall | No code | Startup | Pass (Windows 10) |
+| Remote ID registration | Pass (loopback) | SQLite | Pass (Windows 10) |
+| Data encryption | Pass (storage) | Password management | Pass |
+| Online/Offline | Pass (loopback) | Authentication | Pass (Relay, local) |
+| TLS | Pass (to the Relay, loopback) | E2EE | Pass (loopback, including through an attack proxy) |
+| LAN, Internet connection | **Not tested on a real network.** Relay passes on loopback (section 3d) | Screen | Partial Pass (section 3b) |
+| Mouse, Keyboard | **Not tested with real input** (section 3b) | | |
+| File Transfer, Chat | No code | Multi-Monitor | No code |
+| Multi-Session | Multiple sessions over one Relay: passes on loopback. Multiple Controllers into one machine: not supported | | |
+| Reconnect | Pass (to the Relay); session: real network loss not tried | Backup/Restore, Audit Log | Pass |
 
-## 7. Lỗi kiểm thử đã phát hiện và sửa
+## 7. Test-found bugs fixed
 
-| Lỗi | Phát hiện nhờ | Ghi chú |
+| Bug | Found by | Note |
 |---|---|---|
-| Nút tắt Remote Access của Client bị cắt khỏi khung | Xem ảnh chụp | Script vẫn bấm được nên test logic không thấy. Đã thêm test kiểm tra mọi nút nằm trọn trong khung |
-| Build solution x86 làm RDM.Server không chạy được | Nghiệm thu x86 | `RDM.Shared` bị khóa x86; đã đổi sang IL trung tính |
-| Bản x86 báo sai edition Windows | Xem ảnh chụp | Đọc nhầm `WOW6432Node`; đã thêm test |
-| `verify.ps1` trả exit 0 khi có test lỗi | Đọc kết quả | Đã sửa |
-| **Chủ máy bấm Ngắt ngay nhưng Controller tự kết nối lại;** với Unattended thì công tắc khẩn cấp vô tác dụng | Rà soát thiết kế | Đã sửa ở hai đầu, có test |
-| **Tràn số nguyên khi kiểm tra biên vùng ảnh:** máy đích độc hại có thể vượt kiểm tra | Test với giá trị biên | Đã sửa |
-| Hộp thoại fingerprint chạy trên luồng nền, sẽ lỗi ở lần kết nối đầu | Rà soát mã | Đã sửa, kịch bản ba tiến trình đi qua đường này |
-| Kẻ không có mật khẩu có thể spam hộp thoại xin phép lên màn hình chủ máy | Rà soát thiết kế | Đã thêm thời gian chờ 10 giây, có test |
-| Active Sessions vẫn liệt kê phiên đã bị chủ máy ngắt | Xem ảnh chụp | Đã sửa |
-| **Bộ cài Client chỉ chứa file exe, không chạy được,** dù build báo thành công | `verify-installer.ps1` | Đã sửa; build giờ dừng nếu WiX báo thiếu file |
-| SQLite của Relay có CVE-2025-6965 | Cảnh báo `NU1903` | Đã vá lên 3.53.3 |
-| Tiếng Việt trong console Relay bị hỏng | Đọc log | Đã sửa |
-| Test Relay thỉnh thoảng lỗi do tranh cổng | Đọc log Server | Đã sửa bộ test; Server không có lỗi |
-| **Bộ cài Server từ chối cài trên mọi hệ điều hành:** điều kiện đòi `VersionNT >= 1000`, nhưng Windows Installer báo 603 ngay trên Windows 10 | Chủ dự án chạy cài thật | Đã chuyển điều kiện sang Burn, nơi đọc đúng phiên bản; đối chứng bằng điều kiện ngược; `verify-installer` chặn tái diễn |
-| Chữ tiếng Việt không dấu trên giao diện ("Xoay") mà scanner chữ có dấu không thấy | Xem ảnh chụp | Đã sửa, test chặn thêm từ không dấu đặc trưng |
-| Test quét Database có thể đọc thiếu khi SQLite gộp WAL giữa chừng | Lỗi ngẫu nhiên ở Release x64 | Đã sửa: quét lại từ đầu, không bỏ qua |
-| **Script kiểm thử lưu ảnh màn hình thật của người chạy** khi phiên có màn hình | Xem ảnh chụp | Đã xóa ảnh; mặc định không lưu nữa |
-| Thiết bị vừa thêm trống IP/OS | Xem ảnh chụp | Đã sửa, có test ở tầng Service |
-| **Treo khi dọn dẹp ngay sau khi xin vé:** kết quả chạy tiếp trên luồng nhận dữ liệu, nếu bên gọi chặn chờ dừng kết nối thì hai bên chờ nhau | Test treo hơn 10 phút, đặt mốc từng bước | Đã sửa; hộp thoại xin phép chủ máy và fingerprint có cùng kiểu mã nên cũng được sửa |
-| **Bên nhận cố tình không đọc giữ chỗ phiên Relay mãi** vì ghi không có thời hạn | Rà soát mã | Đã sửa, test đã đối chứng |
-| Một đầu chết đúng lúc nhận `RelayReady` làm đầu kia chờ mãi, giữ kết nối | Rà soát mã | Đã sửa. **Chưa có test tái hiện đúng thời điểm này** |
-| Tìm máy LAN báo lỗi socket chưa bind khi mọi lần gửi đều lỗi | Lỗi ngẫu nhiên ở Debug x64 | Đã sửa, có test. Chưa xác định vì sao lần gửi trong lần chạy đó lỗi |
-| Không kết nối được máy đã đổi cổng: nhập IP luôn dùng 7444 | Viết kịch bản e2e | Đã thêm dạng `địa chỉ:cổng`, có test |
+| The Client's Disable Remote Access button was clipped out of the frame | Looking at a screenshot | The script could still click it so the logic test missed it. Added a test that every button sits fully within its frame |
+| Building the solution x86 made RDM.Server unrunnable | x86 acceptance | `RDM.Shared` was locked to x86; changed to neutral IL |
+| The x86 build reported the wrong Windows edition | Looking at a screenshot | Misread `WOW6432Node`; added a test |
+| `verify.ps1` returned exit 0 with a failing test | Reading the result | Fixed |
+| **Owner clicks Disconnect now but the Controller auto-reconnects;** with Unattended the emergency switch was ineffective | Design review | Fixed on both ends, with a test |
+| **Integer overflow in image-region bounds checking:** a malicious target could bypass the check | Test with boundary values | Fixed |
+| The fingerprint dialog ran on a background thread and would error on the first connection | Code review | Fixed, a three-process scenario exercises this path |
+| Someone without the password could spam permission dialogs onto the owner's screen | Design review | Added a 10-second timeout, with a test |
+| Active Sessions still listed a session the owner had disconnected | Looking at a screenshot | Fixed |
+| **The Client installer contained only the exe, unrunnable,** though the build reported success | `verify-installer.ps1` | Fixed; the build now stops if WiX reports missing files |
+| The Relay's SQLite had CVE-2025-6965 | The `NU1903` warning | Patched to 3.53.3 |
+| Vietnamese in the Relay console was corrupted | Reading the log | Fixed |
+| Relay tests occasionally failed from port contention | Reading the Server log | Fixed the test harness; the Server had no bug |
+| **The Server installer refused to install on every OS:** the condition required `VersionNT >= 1000`, but Windows Installer reported 603 even on Windows 10 | The project owner ran a real install | Moved the condition to Burn, where the version reads correctly; verified with the inverse condition; `verify-installer` blocks a recurrence |
+| Unaccented Vietnamese text in the interface ("Xoay") that an accented-text scanner missed | Looking at a screenshot | Fixed, a test blocks additional distinctive unaccented words |
+| The database-scan test could read short when SQLite merged the WAL midway | A random failure on Release x64 | Fixed: rescan from the start, skip nothing |
+| **The test script saved a real screenshot of the runner's desktop** when the session had a display | Looking at a screenshot | Deleted the image; by default it no longer saves |
+| A newly added device had empty IP/OS | Looking at a screenshot | Fixed, with a test at the Service layer |
+| **Hang during cleanup right after requesting a ticket:** the result continued on the receive thread, and if the caller blocked waiting for the connection to stop, both sides waited for each other | A test that hung for over 10 minutes, with step-by-step markers | Fixed; the owner-permission and fingerprint dialogs use the same code pattern so they were fixed too |
+| **A receiver that deliberately does not read holds a Relay session forever** because the write had no timeout | Code review | Fixed, the test was verified |
+| One end dying exactly on receiving `RelayReady` left the other waiting forever, holding the connection | Code review | Fixed. **No test reproduces this exact timing** |
+| LAN discovery reported a socket-not-bound error when every send failed | A random failure on Debug x64 | Fixed, with a test. Why the sends failed in that run was not determined |
+| Could not connect to a machine with a changed port: entering an IP always used 7444 | Writing the e2e scenario | Added the `address:port` form, with a test |
 
-## 8. Giới hạn đã biết
+## 8. Known limitations
 
-**Một chương trình kiểu TeamViewer (chủ dự án chọn, thay cho tách riêng ở Phần 3, 14, 15):**
-- **Mọi máy cài đều có đủ code quản trị.** Khả năng đọc dữ liệu vẫn được chặn: phần quản lý phải đăng nhập, Database riêng theo tài khoản Windows.
-- **Không có RDM login cho kết nối nhanh:** ai dùng được tài khoản Windows đó đều kết nối được ra máy khác, nhưng vẫn phải biết mật khẩu máy đích hoặc được chủ máy chấp nhận. Không đọc được mật khẩu đã lưu. Audit ghi `windows:<tên>`.
-- **Mỗi máy mở cổng TCP 7444 và UDP 7445 khi RDM chạy.** Tắt Remote Access thì đóng cả hai.
-- **Tìm máy qua UDP broadcast chưa thử trên mạng thật**, chỉ thử trên loopback. Không qua được router; khi đó dùng Relay hoặc nhập IP.
+**A single TeamViewer-style program (the project owner's choice, replacing the separate programs in Sections 3, 14, 15):**
+- **Every installed machine has the full management code.** The ability to read data is still blocked: the management part requires sign-in, and the database is per Windows account.
+- **No RDM login for quick connect:** anyone who can use that Windows account can connect out to other machines, but still needs the target's password or the owner's acceptance. Stored passwords cannot be read. Audit records `windows:<name>`.
+- **Each machine opens TCP 7444 and UDP 7445 while RDM runs.** Turning off Remote Access closes both.
+- **LAN discovery via UDP broadcast is untested on a real network**, only on loopback. It does not cross routers; use the Relay or enter an IP then.
 
-**Giai đoạn 5:**
-- **Không có TCP hole punching** (mục 3d). Hai máy sau hai router đi qua Relay, nên băng thông Relay là chi phí thật.
-- **Thử trực tiếp mất tối đa 2 giây cho mỗi địa chỉ** trước khi chuyển sang Relay, nên kết nối qua Relay chậm hơn vài giây.
-- **Relay biết ai kết nối tới ai, lúc nào, bao nhiêu dữ liệu**, và ghi Remote ID vào log. Không biết nội dung.
-- **Relay để trống mã đăng ký thì ai cũng dùng được băng thông của nó.** Chưa có hạn mức băng thông theo thiết bị. Tài liệu triển khai yêu cầu đặt mã khi mở ra Internet.
-- **Máy đích phải có cấu hình Relay trên cả hai đầu** để chuyển tiếp. Bên điều khiển chưa cấu hình Relay thì chỉ có đường trực tiếp.
-- **Chưa có IPv6** cho đường chuyển tiếp ở mức đã kiểm thử; chỉ thử IPv4 loopback.
+**Phase 5:**
+- **No TCP hole punching** (section 3d). Two machines behind two routers go through the Relay, so Relay bandwidth is a real cost.
+- **Trying direct takes up to 2 seconds per address** before switching to the Relay, so a relayed connection is a few seconds slower.
+- **The Relay knows who connects to whom, when, and how much data**, and records the Remote ID in its log. It does not know the content.
+- **A Relay with an empty enrollment code lets anyone use its bandwidth.** There is no per-device bandwidth quota yet. The deployment guide requires setting the code when open to the Internet.
+- **The target machine must have Relay configuration on both ends** to forward. If the controlling side has not configured a Relay, only the direct path is available.
+- **No IPv6** for the forwarding path at the tested level; only IPv4 loopback was tried.
 
-**Giai đoạn 4:**
-- **Kết nối trực tiếp chưa thử giữa hai máy thật.** Bộ cài tự mở cổng trên mạng Domain và Private.
-- **Kênh P2P dùng E2EE, không bọc thêm TLS.** Lệch câu chữ Phần 8.1 ("TLS 1.2 trở lên" cho cả P2P). Lý do: TLS tự ký không có gốc tin cậy nên không thêm bảo đảm; E2EE đã mã hóa và xác thực hai đầu bằng khóa ghim. Giữ nguyên theo khuyến nghị; chủ dự án không có ý kiến khác (05/11/2026).
-- **Windows Service chưa từng chạy.** Khi không có Service: đóng cửa sổ Client hoặc đăng xuất Windows là Offline; không có Ctrl+Alt+Del.
-- **Không điều khiển được Secure Desktop** (UAC, màn hình đăng nhập, màn hình khóa), kể cả khi có Service: Agent chạy bằng token người dùng. Controller báo rõ thay vì màn hình đen. Không tạo Agent quyền SYSTEM vì rủi ro cao. Chưa làm, theo khuyến nghị; chủ dự án không có ý kiến khác (05/11/2026).
-- **Ứng dụng chạy quyền Administrator trên máy đích không nhận được input** từ Agent quyền thường (UIPI).
-- **Ctrl+Alt+Del qua Special Keys chỉ có khi có Service.**
-- **Mỗi Client một phiên.** Nhiều Controller cùng lúc chưa hỗ trợ.
-- **Lần kết nối đầu dựa vào việc người dùng đối chiếu fingerprint.** Bỏ qua bước đó (tắt StrictPinning rồi bấm bừa) thì Relay độc hại có thể chen vào và dò mật khẩu offline. Mật khẩu yếu làm rủi ro này tăng.
-- **Giải nén ảnh dùng GDI+ với dữ liệu từ máy đích.** Chỉ sau khi đã xác thực khóa ghim, nhưng máy đích bị chiếm có thể khai thác lỗi của GDI+ trên Controller.
-- **DPI:** app khai báo System DPI Aware; chưa kiểm thử màn hình có DPI khác nhau.
-- **Reconnect:** chưa thử với mất mạng thật; chỉ có test Client ngắt có chủ ý.
-- **H.264:** chưa có, dùng JPEG và PNG.
+**Phase 4:**
+- **Direct connection not tried between two real machines.** The installer opens the port on the Domain and Private networks.
+- **The P2P channel uses E2EE, without an additional TLS wrapper.** This deviates from the wording of Section 8.1 ("TLS 1.2 or later" for P2P too). Reason: a self-signed TLS with no root of trust adds nothing; E2EE already encrypts and authenticates both ends with key pinning. Kept as recommended; the project owner had no other opinion (2026-11-05).
+- **The Windows Service has never run.** Without the Service: closing the Client window or signing out of Windows means Offline; no Ctrl+Alt+Del.
+- **The Secure Desktop cannot be controlled** (UAC, the login screen, the lock screen), even with the Service: the Agent runs under the user's token. The Controller reports clearly instead of a black screen. No SYSTEM-privilege Agent was built because of the high risk. Not done, as recommended; the project owner had no other opinion (2026-11-05).
+- **An application running as Administrator on the target does not receive input** from a normal-privilege Agent (UIPI).
+- **Ctrl+Alt+Del via Special Keys is only available with the Service.**
+- **One session per Client.** Multiple Controllers at once is not supported.
+- **The first connection relies on the user comparing the fingerprint.** Skipping that step (disabling StrictPinning then clicking blindly) lets a malicious Relay intrude and crack the password offline. A weak password raises this risk.
+- **Image decoding uses GDI+ on data from the target.** Only after the pinned key is authenticated, but a compromised target could exploit a GDI+ flaw on the Controller.
+- **DPI:** the app declares System DPI Aware; monitors of different DPI are untested.
+- **Reconnect:** not tried with real network loss; only a test of an intentional Client disconnect.
+- **H.264:** not available, uses JPEG and PNG.
 
-**Giai đoạn 3:**
-- **Relay ghi log ra console**, chưa có Audit Log bền vững, thu hồi thiết bị hay Server Manager. Token Controller chưa có cơ chế thu hồi ngoài việc đổi cấu hình.
-- **Chặn Brute Force theo IP:** nhiều máy chung một IP NAT sẽ cùng bị chặn nếu một máy thử sai nhiều lần.
-- **Thông tin thiết bị (tên, IP, OS) do thiết bị tự khai**, chỉ để hiển thị. Tên do quản trị viên đặt không bị ghi đè.
+**Phase 3:**
+- **The Relay logs to the console**, with no persistent Audit Log, device revocation or Server Manager yet. The Controller token has no revocation mechanism beyond changing the configuration.
+- **IP-based brute-force blocking:** many machines behind one NAT IP are blocked together if one tries wrong passwords repeatedly.
+- **Device info (name, IP, OS) is self-reported by the device**, for display only. A name set by the administrator is not overwritten.
 
-**Giai đoạn 1–2:**
-- **Xoay khóa chỉ làm thủ công.** "Thay đổi khóa định kỳ theo chính sách" (Phần 8.4) chưa tự động.
-- **Metadata không mã hóa:** tên máy, IP, Remote ID, lịch sử, tên người dùng trong `AuditLogs` và `ConnectionHistory` vẫn đọc được nếu file DB bị đánh cắp.
-- **Thu hồi khóa không vô hiệu hóa backup cũ**, vì backup mang theo bản sao khóa của nó. Hộp thoại có cảnh báo.
-- **Xóa khóa khỏi bộ nhớ** chỉ ở mức "khi có thể" do GC của .NET có thể đã sao chép mảng.
-- **Thanh tiêu đề** vẫn sáng khi ở Dark Mode.
-- **Bản x86 có kèm cả `x64\SQLite.Interop.dll`** (và ngược lại). Vô hại khi chạy; bộ cài ở Giai đoạn 7 sẽ loại bỏ.
-- **Chưa có kiểm thử trên máy sạch**, nên chưa biết `SQLite.Interop.dll` có cần cài thêm VC++ runtime không.
-- **Test UI từng treo** khi dùng `Application.DoEvents` lồng nhau để chuyển trang (kẹt trong `DestroyWindow`). Chạy bằng message loop thật thì không treo. Nguyên nhân gốc chưa được xác định tuyệt đối; cần để ý nếu Giai đoạn 4 dùng vòng lặp message lồng nhau.
+**Phases 1–2:**
+- **Key rotation is manual only.** "Periodic key change by policy" (Section 8.4) is not automated.
+- **Unencrypted metadata:** machine names, IPs, Remote IDs, history, and usernames in `AuditLogs` and `ConnectionHistory` are still readable if the DB file is stolen.
+- **Key revocation does not disable old backups**, because a backup carries its own copy of the key. The dialog has a warning.
+- **Wiping keys from memory** is only "best-effort" because .NET's GC may have copied the array.
+- **The title bar** stays light in Dark Mode.
+- **The x86 build also carries `x64\SQLite.Interop.dll`** (and vice versa). Harmless at runtime; the Phase 7 installer will remove it.
+- **No testing on a clean machine yet**, so it is unknown whether `SQLite.Interop.dll` needs the VC++ runtime installed.
+- **The UI test once hung** when using nested `Application.DoEvents` to switch pages (stuck in `DestroyWindow`). Running with a real message loop did not hang. The root cause is not fully determined; watch for it if Phase 4 uses a nested message loop.

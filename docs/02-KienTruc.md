@@ -1,165 +1,165 @@
-# 02 – Kiến trúc và luồng dữ liệu (Bước 3–4)
+# 02 – Architecture and Data Flow (Steps 3–4)
 
-## 0. Thay đổi kiến trúc: một chương trình kiểu TeamViewer
+## 0. Architecture change: a single TeamViewer-style program
 
-Theo quyết định của chủ dự án, Controller và Client được gộp vào **một chương trình `RDM.exe`**, thay cho hai chương trình riêng ở Phần 3, 14, 15 của đặc tả. Cửa sổ chính có hai phần: "Cho phép điều khiển" và "Điều khiển máy khác". Kết nối nhanh không cần đăng nhập RDM; phần quản lý thiết bị mở trong cửa sổ riêng và phải đăng nhập.
+By the project owner's decision, the Controller and Client are merged into **one program, `RDM.exe`**, replacing the two separate programs in Sections 3, 14 and 15 of the specification. The main window has two parts: "Allow control" and "Control another machine". A quick connection needs no RDM sign-in; the device-management part opens in its own window and requires sign-in.
 
-Code vẫn tách trách nhiệm: `RDM.Client` và `RDM.Controller` là thư viện, `RDM.UI` chứa giao diện dùng chung, `RDM.App` là chương trình chạy. Các mục dưới đây vẫn gọi "Controller" và "Client" theo **vai trò** của máy trong một phiên.
+The code still separates responsibilities: `RDM.Client` and `RDM.Controller` are libraries, `RDM.UI` holds shared interface pieces, and `RDM.App` is the runnable program. The sections below still say "Controller" and "Client" by the machine's **role** in a session.
 
-Tìm máy trong LAN: `RDM.exe` trả lời UDP 7445 khi đúng Remote ID. Địa chỉ nhận được chỉ là gợi ý, danh tính được xác minh bằng khóa trong bắt tay E2EE.
+Finding a machine on the LAN: `RDM.exe` answers UDP 7445 when the Remote ID matches. The returned address is only a hint; identity is verified by keys in the E2EE handshake.
 
-## 1. Tổng thể
+## 1. Overview
 
 ```mermaid
 flowchart LR
-  subgraph CTRL[Máy quản trị]
+  subgraph CTRL[Admin machine]
     C[RDM Controller<br/>.NET 4.8 WinForms]
     DB[(RDM_Database.db<br/>SQLite)]
     C --- DB
   end
   subgraph VPS[VPS / Windows Server]
     R[RDM Relay Server<br/>ASP.NET Core]
-    RDB[(Registry thiết bị<br/>không có khóa phiên)]
+    RDB[(Device registry<br/>no session keys)]
     R --- RDB
     M[Server Manager] --> R
   end
-  subgraph TARGET[Máy được điều khiển]
+  subgraph TARGET[Controlled machine]
     S[RDM Client Service<br/>Session 0]
-    A[RDM Client Agent<br/>phiên người dùng]
-    S -- Named Pipe có ACL --> A
+    A[RDM Client Agent<br/>user session]
+    S -- Named Pipe with ACL --> A
   end
-  C -- "TLS 1.2+ (điều phối)" --> R
-  A -- "TLS 1.2+ (đăng ký, heartbeat)" --> R
-  C <-. "E2EE: P2P nếu được" .-> A
-  C <== "E2EE qua Relay<br/>(Relay chỉ thấy bản mã)" ==> R
-  R <== "E2EE qua Relay" ==> A
+  C -- "TLS 1.2+ (coordination)" --> R
+  A -- "TLS 1.2+ (enrollment, heartbeat)" --> R
+  C <-. "E2EE: P2P if possible" .-> A
+  C <== "E2EE over Relay<br/>(Relay sees only ciphertext)" ==> R
+  R <== "E2EE over Relay" ==> A
 ```
 
-## 2. Trách nhiệm từng Project
+## 2. Per-project responsibilities
 
-| Project | Framework | Nền tảng | Trách nhiệm | Phụ thuộc |
+| Project | Framework | Platform | Responsibility | Dependencies |
 |---|---|---|---|---|
-| RDM.Shared | netstandard2.0 | x86, x64 | Model, DTO, Protocol, Security (crypto, KeyManager) | không tham chiếu Project khác |
-| RDM.Data | net48 | x86, x64 | SQLite, Repository, Migration, Backup, dịch vụ nghiệp vụ dữ liệu | Shared |
-| RDM.UI | net48 WinForms | x86, x64 | Theme, control tự vẽ, icon | không tham chiếu Project khác |
-| RDM.Controller | net48 thư viện | x86, x64 | Vai trò điều khiển: phần quản lý, phiên điều khiển | Shared, Data, UI |
-| RDM.Client | net48 thư viện | x86, x64 | Vai trò được điều khiển: chụp màn hình, input, Service | Shared, UI |
-| RDM.App | net48 WinForms, `RDM.exe` | x86, x64 | Chương trình chạy, cửa sổ chính | tất cả ở trên |
-| RDM.Server | ASP.NET Core | x64 | Registry, xác thực, điều phối, relay | Shared |
+| RDM.Shared | netstandard2.0 | x86, x64 | Models, DTOs, Protocol, Security (crypto, KeyManager) | references no other project |
+| RDM.Data | net48 | x86, x64 | SQLite, Repository, Migration, Backup, data business services | Shared |
+| RDM.UI | net48 WinForms | x86, x64 | Theme, owner-drawn controls, icons | references no other project |
+| RDM.Controller | net48 library | x86, x64 | Controller role: management UI, control session | Shared, Data, UI |
+| RDM.Client | net48 library | x86, x64 | Controlled role: screen capture, input, Service | Shared, UI |
+| RDM.App | net48 WinForms, `RDM.exe` | x86, x64 | Runnable program, main window | all of the above |
+| RDM.Server | ASP.NET Core | x64 | Registry, authentication, coordination, relay | Shared |
 | RDM.Tests | net48 xUnit | x86, x64 | Unit, Database, Security, Network Tests | Shared, Data, Controller |
 
-Quy tắc phụ thuộc: UI → Service → Repository → SQLite. Form không viết SQL. Quyền được kiểm tra ở tầng Service, không chỉ ẩn nút trên UI.
+Dependency rule: UI → Service → Repository → SQLite. Forms do not write SQL. Permissions are checked at the Service layer, not just by hiding a button on the UI.
 
-**Chọn framework cho Relay:** đặc tả cho phép ASP.NET Core. Đề xuất **.NET 10 LTS**, vì .NET 8 hết hỗ trợ vào 10/11/2026.
+**Framework choice for the Relay:** the spec allows ASP.NET Core. The proposal is **.NET 10 LTS**, because .NET 8 reaches end of support on 2026-11-10.
 
-## 3. Luồng đăng ký và trạng thái Online/Offline
+## 3. Enrollment and Online/Offline flow
 
 ```mermaid
 sequenceDiagram
   participant A as Client Agent
   participant R as Relay
   participant C as Controller
-  A->>A: Lần đầu: sinh khóa Ed25519 và Remote ID
+  A->>A: First time: generate an Ed25519 key and a Remote ID
   A->>R: TLS: Hello
-  R-->>A: Challenge(nonce ngẫu nhiên)
-  A->>R: DeviceAuth(RemoteID, PublicKey, Sign(nonce, RemoteID, PublicKey), thông tin thiết bị)
-  Note over R: Lần đầu: gắn RemoteID với PublicKey.<br/>Sau đó: khóa khác thì từ chối (chống chiếm ID).
-  R-->>A: AuthResult(Ok, chu kỳ Heartbeat)
-  loop Mỗi 15 giây
+  R-->>A: Challenge(random nonce)
+  A->>R: DeviceAuth(RemoteID, PublicKey, Sign(nonce, RemoteID, PublicKey), device info)
+  Note over R: First time: bind RemoteID to PublicKey.<br/>After that: a different key is refused (ID takeover protection).
+  R-->>A: AuthResult(Ok, Heartbeat interval)
+  loop Every 15 seconds
     A->>R: Heartbeat(AccessEnabled)
     R-->>A: HeartbeatAck
   end
-  Note over R: Quá 45 giây không có Heartbeat là Offline
+  Note over R: More than 45 seconds without a Heartbeat is Offline
   C->>R: TLS: ControllerAuth(token), SubscribeAll
-  R-->>C: PresenceSnapshot (mọi thiết bị đã đăng ký)
+  R-->>C: PresenceSnapshot (all registered devices)
   R-->>C: PresenceChanged(RemoteID, Online/Offline, AccessEnabled)
 ```
 
-**Đã đổi so với thiết kế ban đầu:** thiết bị xác thực bằng chữ ký trên nonce thay vì DeviceToken. Lý do: không còn token nào để bị đánh cắp, chữ ký không phát lại được, và Relay chỉ giữ khóa công khai.
+**Changed from the original design:** devices authenticate by signing a nonce instead of using a DeviceToken. Reason: there is no token left to steal, the signature cannot be replayed, and the Relay only keeps the public key.
 
-**Bảo vệ đăng ký:** đặt `Relay:EnrollmentTokenSha256` để chỉ thiết bị có mã mới đăng ký được. Để trống thì ai kết nối tới Relay cũng đăng ký được Remote ID mới, nên nên đặt khi Relay mở ra Internet.
+**Enrollment protection:** set `Relay:EnrollmentTokenSha256` so only devices with the code can enroll. Left empty, anyone who connects to the Relay can enroll a new Remote ID, so it should be set when the Relay is open to the Internet.
 
-**Phạm vi một Relay:** một Relay phục vụ một tổ chức. Controller có token thấy toàn bộ thiết bị; chưa có phân tách nhiều khách hàng.
+**Scope of one Relay:** one Relay serves one organization. A Controller with the token sees every device; there is no multi-tenant separation yet.
 
-## 4. Luồng kết nối (Quick Connect)
+## 4. Connection flow (Quick Connect)
 
 ```mermaid
 sequenceDiagram
-  participant U as Quản trị viên
+  participant U as Administrator
   participant C as Controller
   participant R as Relay
   participant A as Client Agent
-  participant O as Chủ máy
-  U->>C: Nhập Remote ID, mật khẩu, CONNECT
-  C->>R: 1-2. SessionRequest(RemoteID, chỉ hỏi)
-  R-->>C: SessionTicket(trạng thái, IP nội bộ, IP công khai, cổng)
-  C->>A: Thử trực tiếp từng địa chỉ, chờ 2 giây
-  opt Trực tiếp thất bại
-    C->>R: SessionRequest(RemoteID, xin chuyển tiếp)
-    R->>A: IncomingSession(vé của máy đích)
-    R-->>C: SessionTicket(vé của Controller)
-    C->>R: RelayJoin(vé)
-    A->>R: RelayJoin(vé)
+  participant O as Machine owner
+  U->>C: Enter Remote ID, password, CONNECT
+  C->>R: 1-2. SessionRequest(RemoteID, query only)
+  R-->>C: SessionTicket(status, internal IP, public IP, port)
+  C->>A: Try each address directly, wait 2 seconds
+  opt Direct fails
+    C->>R: SessionRequest(RemoteID, request relay)
+    R->>A: IncomingSession(target's ticket)
+    R-->>C: SessionTicket(Controller's ticket)
+    C->>R: RelayJoin(ticket)
+    A->>R: RelayJoin(ticket)
     R-->>C: RelayReady
     R-->>A: RelayReady
   end
-  C->>A: 3. Bắt tay E2EE (xem 04-Security.md), giống nhau trên cả hai đường. So khóa với khóa ghim
-  C->>A: Bằng chứng mật khẩu gắn với kênh (channel binding)
-  alt Không bật Unattended
-    A->>O: Hỏi: Chấp nhận / Từ chối
-    O-->>A: Chấp nhận
+  C->>A: 3. E2EE handshake (see 04-Security.md), identical on both paths. Compare key against the pinned key
+  C->>A: Channel-bound password proof
+  alt Unattended not enabled
+    A->>O: Ask: Accept / Reject
+    O-->>A: Accept
   end
-  A-->>C: 4. SessionAccepted + quyền được cấp
-  C->>C: 5. Mở Remote Desktop, 6. Ghi ConnectionHistory
-  A->>O: Luôn hiện thanh "Đang có phiên điều khiển" + nút Ngắt
+  A-->>C: 4. SessionAccepted + granted permissions
+  C->>C: 5. Open Remote Desktop, 6. Write ConnectionHistory
+  A->>O: Always show the "A control session is active" bar + Disconnect button
 ```
 
-**Thiết kế đường chuyển tiếp:**
-- **Vé:** 32 byte ngẫu nhiên, mỗi bên một vé, dùng một lần, hết hạn sau 30 giây. Relay phát hai vé theo cặp nên không ghép nhầm phiên.
-- **Từ RelayReady trở đi** Relay chỉ chép byte thô giữa hai kết nối TLS, không phân tích nội dung.
-- **Máy nào cũng xin được phiên,** không cần token Controller: quyền truy cập do máy đích quyết định bằng mật khẩu hoặc chủ máy chấp nhận. Token Controller chỉ dùng để xem toàn bộ trạng thái thiết bị.
-- **Lỗi có ý nghĩa thì không thử đường khác:** sai khóa ghim, sai mật khẩu, chủ máy từ chối là câu trả lời cuối cùng. Chỉ khi không tới được, hoặc gặp nhầm máy do trùng IP nội bộ giữa hai mạng, mới thử đường tiếp theo.
-- **Không có TCP hole punching.** Sau NAT là qua Relay, nên băng thông Relay là chi phí thật khi triển khai.
+**Relay path design:**
+- **Ticket:** 32 random bytes, one per side, single-use, expires after 30 seconds. The Relay issues two tickets as a pair, so sessions are never mismatched.
+- **From RelayReady onward** the Relay only copies raw bytes between the two TLS connections; it does not parse the content.
+- **Any machine can request a session,** no Controller token required: access is decided by the target machine via password or the owner's acceptance. The Controller token is only for viewing all device status.
+- **A meaningful error does not trigger another path:** a wrong pinned key, wrong password, or owner rejection is the final answer. Only when the machine is unreachable, or the wrong machine is reached due to a duplicate internal IP across two networks, is the next path tried.
+- **No TCP hole punching.** Beyond NAT it goes through the Relay, so Relay bandwidth is a real cost at deployment.
 
-## 5. Luồng dữ liệu trong phiên
+## 5. In-session data flow
 
 ```mermaid
 flowchart LR
   subgraph Agent
-    CAP[BitBlt] --> DIFF[So khối 64x64] --> ENC[JPEG/PNG] --> SEAL1[AES-256-GCM]
-    OPEN2[Giải mã] --> INP[SendInput]
+    CAP[BitBlt] --> DIFF[64x64 tile diff] --> ENC[JPEG/PNG] --> SEAL1[AES-256-GCM]
+    OPEN2[Decrypt] --> INP[SendInput]
   end
   subgraph Controller
-    OPEN1[Giải mã] --> DEC[Giải nén] --> VIEW[Vẽ màn hình]
-    UI[Chuột, phím] --> SEAL2[AES-256-GCM]
+    OPEN1[Decrypt] --> DEC[Decompress] --> VIEW[Draw screen]
+    UI[Mouse, keyboard] --> SEAL2[AES-256-GCM]
   end
-  SEAL1 == bản mã ==> OPEN1
-  SEAL2 == bản mã ==> OPEN2
+  SEAL1 == ciphertext ==> OPEN1
+  SEAL2 == ciphertext ==> OPEN2
 ```
 
-Các kênh (Screen, Input, File, Chat, Control) được ghép trên một luồng, có cửa sổ tín dụng để file lớn không làm nghẽn input.
+The channels (Screen, Input, File, Chat, Control) are multiplexed over one stream, with a credit window so a large file does not starve input.
 
-Luồng đóng khung được thiết kế để không treo UI: capture và mạng chạy trên Task riêng có `CancellationToken`, Controller chỉ giữ frame mới nhất và bỏ frame cũ khi mạng chậm.
+The framing loop is designed not to block the UI: capture and network run on separate Tasks with a `CancellationToken`, and the Controller keeps only the latest frame, dropping old frames when the network is slow.
 
 ## 6. Session 0 Isolation
 
 ```mermaid
 flowchart TB
-  SVC[Windows Service - LocalSystem, Session 0] -->|WTSQueryUserToken + CreateProcessAsUser| AG[Agent trong phiên console]
-  SVC -->|Sự kiện đổi phiên: logon, logoff, RDP| SVC
+  SVC[Windows Service - LocalSystem, Session 0] -->|WTSQueryUserToken + CreateProcessAsUser| AG[Agent in the console session]
+  SVC -->|Session-change events: logon, logoff, RDP| SVC
   SVC -->|SendSAS| CAD[Ctrl+Alt+Del]
-  AG -->|BitBlt, SendInput| DESK[Desktop người dùng]
-  SVC -.->|Chỉ khi Unattended được chủ máy bật| AGW[Agent trên desktop Winlogon]
+  AG -->|BitBlt, SendInput| DESK[User desktop]
+  SVC -.->|Only when Unattended is enabled by the owner| AGW[Agent on the Winlogon desktop]
 ```
 
-Service không tự chụp hay điều khiển desktop. Client vẫn dùng được khi không cài Service (chế độ hỗ trợ tức thời), nhưng khi đó không có Unattended, không qua được UAC và không có Ctrl+Alt+Del.
+The Service does not capture or control the desktop itself. The Client still works without the Service installed (instant-support mode), but then there is no Unattended, UAC cannot be passed, and there is no Ctrl+Alt+Del.
 
-## 7. Trình tự triển khai
+## 7. Deployment sequence
 
-| Giai đoạn | Nội dung | Trạng thái hiện tại xem tại |
+| Phase | Scope | Current status in |
 |---|---|---|
-| 1–2 | Nền tảng, UI, Database, bảo mật lưu trữ | `07-BaoCaoKiemThu.md` |
-| 3 | Client, Remote ID, đăng ký, Heartbeat, Online/Offline, xác thực truy cập, kèm Device Registry của Relay. Windows Service chuyển sang Giai đoạn 4 | `07-BaoCaoKiemThu.md` |
-| 4 | Phiên trực tiếp, E2EE, Screen Capture, chuột, bàn phím, Windows Service. **Chuột, bàn phím thật và Service chưa được kiểm thử** | `07-BaoCaoKiemThu.md`, mục 3b |
-| 5 | Relay dữ liệu, kết nối qua Internet, phiên đồng thời. **Chỉ kiểm thử trên loopback; chưa có TCP hole punching** | `07-BaoCaoKiemThu.md`, mục 3d |
-| 6–7 | File Transfer, Chat, mở rộng, hoàn thiện đóng gói | Chưa bắt đầu |
+| 1–2 | Foundation, UI, Database, storage security | `07-BaoCaoKiemThu.md` |
+| 3 | Client, Remote ID, enrollment, Heartbeat, Online/Offline, access authorization, plus the Relay's Device Registry. The Windows Service moves to Phase 4 | `07-BaoCaoKiemThu.md` |
+| 4 | Direct session, E2EE, Screen Capture, mouse, keyboard, Windows Service. **Real mouse, keyboard and Service not yet tested** | `07-BaoCaoKiemThu.md`, section 3b |
+| 5 | Data Relay, Internet connection, concurrent sessions. **Loopback-tested only; no TCP hole punching** | `07-BaoCaoKiemThu.md`, section 3d |
+| 6–7 | File Transfer, Chat, extensions, final packaging | Not started |

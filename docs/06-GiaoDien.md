@@ -1,6 +1,6 @@
-# 06 – Thiết kế giao diện (Bước 8)
+# 06 – Interface Design (Step 8)
 
-**Từ phiên bản 0.5.0:** `RDM.exe` mở lên là cửa sổ hai cột (Cho phép điều khiển | Điều khiển máy khác). Mục 1 dưới đây mô tả cửa sổ **Quản lý thiết bị**, mở từ nút trong cửa sổ chính sau khi đăng nhập. Mục 3 dưới đây là cột bên trái của cửa sổ chính.
+**From version 0.5.0:** opening `RDM.exe` shows a two-column window (Allow control | Control another machine). Section 1 below describes the **Device Management** window, opened from a button in the main window after signing in. Section 3 below is the left column of the main window.
 
 ## 1. Controller
 
@@ -16,7 +16,7 @@
 |   Favorites    |  | Quick Connect        | | Online / Offline      | |
 |   Active Sess. |  +----------------------+ +-----------------------+ |
 |   File Transfer|  +----------------------+ +-----------------------+ |
-|   History      |  | Lịch sử kết nối      | | Recent Activities     | |
+|   History      |  | Connection History   | | Recent Activities     | |
 |   Users        |  +----------------------+ +-----------------------+ |
 |   Security     |                                                      |
 |   Settings     |                                                      |
@@ -24,36 +24,36 @@
 +----------------+------------------------------------------------------+
 ```
 
-- **Màu:** Sidebar xanh đậm ở cả hai chế độ. Nội dung xám nhạt / trắng (Light) hoặc xanh than (Dark). Toàn bộ màu nằm trong `Theme`, không viết cứng ở Form.
-- **Font:** Segoe UI; icon dùng Segoe UI Symbol để có trên Windows 7.
-- **Control tự vẽ:** `ModernButton` (bo góc, hover), `Card` (bo góc), `SidebarButton`, `ModernInput`, `StatCard`, `BarChart`, `PresenceBar`, `GridView<T>`.
-- **Biểu đồ:** không dùng biểu đồ tròn 2 phần cho Online/Offline; dùng `PresenceBar` kèm nhãn và số. Biểu đồ cột một chuỗi dùng màu `Accent` (đã kiểm tra độ tương phản với nền sáng và tối bằng validator). Màu trạng thái luôn đi kèm ký hiệu và chữ. Số liệu đầy đủ xem ở trang Connection History.
-- **DPI:** System DPI Aware, mọi kích thước qua `Dpi.S()`.
-- **Kích thước tối thiểu:** 1024x768.
-- **Bảng dữ liệu:** `DataGridView` ở `VirtualMode`, tìm kiếm và lọc ở tầng SQL, nên chịu được hàng nghìn thiết bị.
+- **Color:** a dark-blue sidebar in both modes. Content is light gray / white (Light) or navy (Dark). All colors live in `Theme`, never hard-coded in a Form.
+- **Font:** Segoe UI; icons use Segoe UI Symbol so they exist on Windows 7.
+- **Owner-drawn controls:** `ModernButton` (rounded, hover), `Card` (rounded), `SidebarButton`, `ModernInput`, `StatCard`, `BarChart`, `PresenceBar`, `GridView<T>`.
+- **Charts:** no two-part pie chart for Online/Offline; use `PresenceBar` with labels and numbers. The single-series bar chart uses the `Accent` color (contrast against light and dark backgrounds checked with the validator). Status colors always come with a symbol and text. Full figures are on the Connection History page.
+- **DPI:** System DPI Aware, every size through `Dpi.S()`.
+- **Minimum size:** 1024x768.
+- **Data grids:** `DataGridView` in `VirtualMode`, with search and filter at the SQL layer, so it handles thousands of devices.
 
-## 2. Nguyên tắc trung thực trên giao diện
+## 2. The principle of honesty in the interface
 
-Chức năng thuộc giai đoạn chưa làm **không được giả lập**. Trang tương ứng ghi rõ "Chưa triển khai, thuộc Giai đoạn N". Nút CONNECT cũng bị vô hiệu hóa với cùng lý do. Trạng thái thiết bị hiển thị **"Chưa rõ"** cho tới khi có dữ liệu thật từ Relay: ghi "Offline" khi chưa biết cũng là khẳng định sai. Không sinh số liệu mẫu.
+A feature belonging to an unfinished phase **must not be simulated**. The corresponding page clearly states "Not implemented, belongs to Phase N". The CONNECT button is likewise disabled with the same reason. Device status shows **"Unknown"** until real data arrives from the Relay: writing "Offline" when it is unknown is also a false claim. No sample data is generated.
 
-## 3. Client (Giai đoạn 3)
+## 3. Client (Phase 3)
 
 ```
 +-------------------------------------+
 | RDM                                 |
 |  Remote ID    123 456 789   [Copy]  |
-|  Trạng thái   Online                |
-|  Máy tính     PC-KT-01              |
-|  Hệ điều hành Windows 10 x64        |
+|  Status       Online                |
+|  Computer     PC-KT-01              |
+|  OS           Windows 10 x64        |
 |  IP           10.0.0.12             |
 |-------------------------------------|
-|  Mật khẩu truy cập  [Change Password]|
+|  Access password    [Change Password]|
 |  [ ] Enable Unattended Access       |
 |  [ ] Disable Remote Access          |
 |-------------------------------------|
-|  Lịch sử kết nối                    |
+|  Connection history                 |
 |  [Disconnect All]        [Settings] |
 +-------------------------------------+
 ```
 
-Khi có phiên: thanh nổi luôn hiện trên cùng ghi người điều khiển, kèm nút **Ngắt ngay**. Thanh này không thể tắt bằng cấu hình.
+During a session: a floating bar is always shown at the top naming who is in control, with a **Disconnect now** button. This bar cannot be turned off by configuration.

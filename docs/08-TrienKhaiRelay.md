@@ -1,66 +1,66 @@
-# 08 – Triển khai Relay Server (phần Registry và Online/Offline)
+# 08 – Relay Server Deployment (Registry and Online/Offline)
 
-Viết cho quản trị viên hệ thống. Relay đăng ký thiết bị, báo Online/Offline và chuyển tiếp phiên giữa hai máy không thấy nhau trực tiếp. Relay chỉ thấy bản mã, không đọc được phiên. Hướng dẫn đầy đủ gửi khách hàng ở `RELAY-DEPLOYMENT.md`.
+Written for system administrators. The Relay registers devices, reports Online/Offline, and forwards sessions between machines that cannot reach each other directly. The Relay only sees ciphertext; it cannot read the session. The full customer-facing guide is in `RELAY-DEPLOYMENT.md`.
 
-## 1. Yêu cầu
+## 1. Requirements
 
-- Windows Server hoặc Windows x64 có .NET 10 ASP.NET Core Runtime. Chạy trên Linux chưa được kiểm thử.
-- Mở cổng TCP cho thiết bị và Controller, mặc định 7443.
+- Windows Server or Windows x64 with the .NET 10 ASP.NET Core Runtime. Running on Linux has not been tested.
+- Open a TCP port for devices and the Controller, 7443 by default.
 
-## 2. Chứng thư TLS
+## 2. TLS certificate
 
-Relay không chạy nếu thiếu chứng thư. Đặt mật khẩu PFX trong biến môi trường `RDM_CERT_PASSWORD`, không ghi vào file cấu hình.
+The Relay does not run without a certificate. Put the PFX password in the `RDM_CERT_PASSWORD` environment variable, not in a configuration file.
 
-**Có tên miền và chứng thư từ CA:** dùng file PFX đó; Client và Controller để trống khóa ghim. Khuyến nghị ECDSA P-256 nếu có máy Windows 7.
+**With a domain and a CA certificate:** use that PFX file; leave the pinned key empty on the Client and Controller. ECDSA P-256 is recommended if you have Windows 7 machines.
 
-**Mạng nội bộ:** sinh chứng thư tự ký. Hostname phải đúng tên mà Client và Controller dùng để kết nối.
-
-```powershell
-$env:RDM_CERT_PASSWORD = '<mật khẩu>'
-.\RDM.Server.exe --generate-cert C:\RDM\relay.pfx relay.congty.local 825
-```
-
-Lệnh in ra **khóa ghim** 64 ký tự. Nhập khóa này vào Settings của mọi Client và Controller. Khi đổi chứng thư bằng khóa mới, phải cập nhật lại khóa ghim ở mọi nơi.
-
-## 3. Token
-
-Sinh chuỗi ngẫu nhiên dài cho token Controller và mã đăng ký thiết bị, rồi băm. Lệnh đọc từ stdin để token không nằm trong lịch sử dòng lệnh.
+**On an internal network:** generate a self-signed certificate. The hostname must match the name the Client and Controller use to connect.
 
 ```powershell
-.\RDM.Server.exe --hash-token   # nhập token, nhấn Enter, nhận giá trị băm
+$env:RDM_CERT_PASSWORD = '<password>'
+.\RDM.Server.exe --generate-cert C:\RDM\relay.pfx relay.company.local 825
 ```
 
-Ghi giá trị băm vào `appsettings.json`; bản rõ chỉ nhập ở Controller hoặc Client.
+The command prints a 64-character **pinned key**. Enter it in the Settings of every Client and Controller. When you replace the certificate with a new key, update the pinned key everywhere.
 
-| Khóa cấu hình | Ý nghĩa |
+## 3. Tokens
+
+Generate long random strings for the Controller token and the device enrollment code, then hash them. The command reads from stdin so the token stays out of the command-line history.
+
+```powershell
+.\RDM.Server.exe --hash-token   # type the token, press Enter, receive the hash
+```
+
+Write the hash into `appsettings.json`; the plaintext is only entered in the Controller or Client.
+
+| Configuration key | Meaning |
 |---|---|
-| `Relay:CertificatePath` | Đường dẫn file PFX |
-| `Relay:ControllerTokenSha256` | Để trống thì mọi Controller bị từ chối |
-| `Relay:EnrollmentTokenSha256` | Để trống thì **ai cũng đăng ký được thiết bị mới và dùng băng thông Relay**. **Phải đặt khi mở ra Internet.** Thiết bị đã đăng ký xin được phiên tới mọi Remote ID, sau đó vẫn phải có mật khẩu hoặc chủ máy chấp nhận |
-| `Relay:MaxAuthFailures`, `Relay:AuthBlockMinutes` | Chặn IP sau số lần xác thực sai, mặc định 20 lần, 15 phút. Nhiều máy chung một IP NAT sẽ cùng bị chặn |
-| `Relay:MaxConnections` | Giới hạn kết nối đồng thời |
-| `Relay:MaxRelaySessions` | Giới hạn phiên chuyển tiếp đồng thời, mặc định 1000. Là giới hạn cấu hình, chưa phải năng lực đã kiểm chứng |
-| `Relay:TicketSeconds`, `Relay:RelayIdleSeconds`, `Relay:SessionRequestsPerMinute` | Hạn vé 30 giây; đóng phiên sau 120 giây không có dữ liệu; 30 yêu cầu mỗi phút cho mỗi thiết bị |
+| `Relay:CertificatePath` | Path of the PFX file |
+| `Relay:ControllerTokenSha256` | If empty, every Controller is refused |
+| `Relay:EnrollmentTokenSha256` | If empty, **anyone can register a new device and use the Relay's bandwidth**. **Must be set when open to the Internet.** A registered device can request a session with any Remote ID, but still needs the password or the owner's acceptance |
+| `Relay:MaxAuthFailures`, `Relay:AuthBlockMinutes` | Block an IP after this many failed authentications, 20 attempts and 15 minutes by default. Many machines behind one NAT address are blocked together |
+| `Relay:MaxConnections` | Maximum simultaneous connections |
+| `Relay:MaxRelaySessions` | Maximum simultaneous relayed sessions, 1000 by default. A configuration limit, not a tested capacity |
+| `Relay:TicketSeconds`, `Relay:RelayIdleSeconds`, `Relay:SessionRequestsPerMinute` | Ticket lifetime 30 seconds; close a session after 120 seconds without data; 30 requests per minute per device |
 
-## 4. Cấu hình Client và Controller
+## 4. Configuring the Client and Controller
 
-- **Mỗi máy RDM:** nút Settings ở cửa sổ chính → Relay Server, Port, Khóa ghim, Mã đăng ký.
-- **Máy quản trị, thêm:** Quản lý thiết bị → Settings → Host, Port, Token Controller, Khóa ghim. Tùy chọn tự động thêm thiết bị mới.
+- **Every RDM machine:** the Settings button in the main window → Relay Server, Port, pinned key, enrollment code.
+- **Admin machines, additionally:** Device Management → Settings → Host, Port, Controller token, pinned key. Optionally auto-add new devices.
 
-## 5. Kiểm tra
+## 5. Check
 
-`GET http://127.0.0.1:7080/health` trả về số thiết bị Online và số Controller; endpoint này chỉ lắng nghe trên loopback. Không mở nó ra Internet.
+`GET http://127.0.0.1:7080/health` returns the number of Online devices and Controllers; this endpoint only listens on loopback. Do not expose it to the Internet.
 
-## 6. Sao lưu
+## 6. Backup
 
-Sao lưu file `%ProgramData%\RDM\Relay\rdm-relay.db` (đổi được bằng `Relay:DatabasePath`). Gỡ cài đặt không xóa file này. Mất file này thì registry bị trống: Remote ID không còn gắn với khóa, và bất kỳ ai cũng có thể đăng ký trước chủ cũ nếu không đặt mã đăng ký.
+Back up the `%ProgramData%\RDM\Relay\rdm-relay.db` file (changeable via `Relay:DatabasePath`). Uninstalling does not delete it. If this file is lost, the registry is empty: Remote IDs are no longer tied to their keys, and anyone could register ahead of the former owner if no enrollment code is set.
 
-## 7. Trực tiếp và chuyển tiếp
+## 7. Direct and relayed
 
-RDM thử trực tiếp trước qua địa chỉ Relay cung cấp, mỗi địa chỉ chờ 2 giây, cổng mặc định 7444 (đổi được trong Settings). Bộ cài RDM tự mở tường lửa trên mạng Domain và Private. Không được thì hai máy cùng kết nối ra Relay bằng vé dùng một lần. Không có TCP hole punching nên hai máy sau hai router thường đi qua Relay. Nhập IP ở cửa sổ chính thì luôn đi trực tiếp, dạng `địa chỉ:cổng` nếu cổng khác mặc định. Địa chỉ do Relay cung cấp không được tin: danh tính máy được xác minh bằng khóa ghim.
+RDM tries direct first via the addresses the Relay provides, waiting 2 seconds per address, on the default port 7444 (changeable in Settings). The RDM installer opens the firewall on the Domain and Private networks. If that fails, both machines connect out to the Relay using single-use tickets. There is no TCP hole punching, so two machines behind two routers normally go through the Relay. Entering an IP in the main window always goes direct, in the form `address:port` for a non-default port. The address the Relay provides is not trusted: machine identity is verified by the pinned key.
 
-## 8. Chưa có
+## 8. Not available yet
 
-TCP hole punching, thu hồi thiết bị từ giao diện, Server Manager, Firewall Policy, Audit Log bền vững của Relay (hiện chỉ ghi ra console).
+TCP hole punching, revoking devices from the interface, Server Manager, firewall policy, a persistent Relay audit log (currently only logs to the console).
 
-Chạy Relay như dịch vụ Windows đã có mã (`UseWindowsService`) nhưng **chưa kiểm thử**; các bước ở `RELAY-DEPLOYMENT.md`.
+Running the Relay as a Windows service is coded (`UseWindowsService`) but **not tested**; the steps are in `RELAY-DEPLOYMENT.md`.

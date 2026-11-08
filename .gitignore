@@ -13,3 +13,5 @@ TestResults/
 *.pfx
 deploy/relay/
 .claude/settings.local.json
+promp.txt
+prompt.txt

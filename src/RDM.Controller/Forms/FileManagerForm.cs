@@ -275,8 +275,34 @@ public sealed class FileManagerForm : Form
         if (_remoteDir.Length == 0) { SetStatus("Open a remote folder first."); return; }
         var files = Selected(_local).Where(t => !t.IsDir && t.FullPath != null).ToList();
         if (files.Count == 0) { SetStatus("Select file(s) on the left to upload."); return; }
-        foreach (var f in files) _ = Quiet(_session.UploadAsync(f.FullPath, _remoteDir));
-        SetStatus($"Uploading {files.Count} file(s)...");
+        // Trùng tên ở thư mục đích thì hỏi xác nhận; Yes = ghi đè, No = bỏ qua file đó, Cancel = dừng.
+        var existing = RemoteFileNames();
+        var started = 0;
+        foreach (var f in files)
+        {
+            var name = Path.GetFileName(f.FullPath);
+            var overwrite = false;
+            if (existing.Contains(name))
+            {
+                var answer = MessageBox.Show(this, $"\"{name}\" already exists in the remote folder.\n\nOverwrite it?",
+                    "File Manager", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+                if (answer == DialogResult.Cancel) break;
+                if (answer == DialogResult.No) continue;
+                overwrite = true;
+            }
+            _ = Quiet(_session.UploadAsync(f.FullPath, _remoteDir, overwrite));
+            started++;
+        }
+        if (started > 0) SetStatus($"Uploading {started} file(s)...");
+    }
+
+    /// <summary>Tên các file (không phải thư mục) đang có trong khung máy ở xa, để phát hiện trùng tên khi upload.</summary>
+    private HashSet<string> RemoteFileNames()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (ListViewItem it in _remote.Items)
+            if (it.Tag is RowTag tag && !tag.IsDir) set.Add(it.Text);
+        return set;
     }
 
     private void Download()

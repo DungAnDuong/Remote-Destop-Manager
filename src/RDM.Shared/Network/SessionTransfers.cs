@@ -103,8 +103,11 @@ public sealed class SessionTransfers
     public Task SendChatAsync(string text, CancellationToken ct) =>
         _send(SessionMessage.Chat, Wire.Build(w => w.Str(text ?? string.Empty)), ct);
 
-    /// <summary>Gửi một file sang bên kia. targetDir là thư mục nơi bên nhận lưu (rỗng = thư mục mặc định).</summary>
-    public async Task SendFileAsync(string path, string targetDir, CancellationToken ct)
+    /// <summary>
+    /// Gửi một file sang bên kia. targetDir là thư mục nơi bên nhận lưu (rỗng = thư mục mặc định).
+    /// overwrite = true thì bên nhận GHI ĐÈ file trùng tên; mặc định false thì tự đổi tên "(1)" để không ghi đè.
+    /// </summary>
+    public async Task SendFileAsync(string path, string targetDir, bool overwrite, CancellationToken ct)
     {
         var id = Interlocked.Increment(ref _nextId);
         var info = new FileInfo(path);
@@ -115,7 +118,7 @@ public sealed class SessionTransfers
         TransferChanged?.Invoke(progress);
         try
         {
-            await _send(SessionMessage.FileOffer, Wire.Build(w => { w.Write(id); w.Str(info.Name); w.Write(info.Length); w.Str(targetDir ?? string.Empty); }), cancel.Token).ConfigureAwait(false);
+            await _send(SessionMessage.FileOffer, Wire.Build(w => { w.Write(id); w.Str(info.Name); w.Write(info.Length); w.Str(targetDir ?? string.Empty); w.Write(overwrite); }), cancel.Token).ConfigureAwait(false);
             using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 var buffer = new byte[ChunkSize];
@@ -158,7 +161,8 @@ public sealed class SessionTransfers
         finally { _outgoing.TryRemove(id, out _); }
     }
 
-    public Task SendFileAsync(string path, CancellationToken ct) => SendFileAsync(path, null, ct);
+    public Task SendFileAsync(string path, string targetDir, CancellationToken ct) => SendFileAsync(path, targetDir, false, ct);
+    public Task SendFileAsync(string path, CancellationToken ct) => SendFileAsync(path, null, false, ct);
 
     public void CancelOutgoing(int id) { if (_outgoing.TryGetValue(id, out var o)) { try { o.Cts.Cancel(); } catch (ObjectDisposedException) { } } }
 
@@ -251,7 +255,13 @@ public sealed class SessionTransfers
 
     private void OnOffer(byte[] payload)
     {
-        var (id, rawName, size, targetDir) = Wire.Parse(payload, r => (r.ReadInt32(), r.Str(), r.ReadInt64(), r.Str()));
+        var (id, rawName, size, targetDir, overwrite) = Wire.Parse(payload, r =>
+        {
+            var tid = r.ReadInt32(); var nm = r.Str(); var sz = r.ReadInt64(); var td = r.Str();
+            // Cờ overwrite là tùy chọn: bản cũ không gửi, đọc có điều kiện để tương thích ngược.
+            var ow = r.BaseStream.Position < r.BaseStream.Length && r.ReadBoolean();
+            return (tid, nm, sz, td, ow);
+        });
         var name = SafeName(rawName);
         var progress = new FileTransferProgress { Id = id, FileName = name, TotalBytes = size, Incoming = true, ToFolder = !string.IsNullOrWhiteSpace(targetDir) };
         if (name.Length == 0 || size < 0 || size > MaxFileSize)
@@ -265,9 +275,10 @@ public sealed class SessionTransfers
         try
         {
             var dir = ChooseDir(targetDir);
-            var path = UniquePath(dir, name);
+            // Ghi đè khi được yêu cầu (người dùng đã xác nhận ở máy điều khiển); nếu không thì đổi tên để không ghi đè.
+            var path = overwrite ? Path.Combine(dir, name) : UniquePath(dir, name);
             progress.SavePath = path;
-            _incoming[id] = new Incoming { Stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None), Progress = progress };
+            _incoming[id] = new Incoming { Stream = new FileStream(path, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None), Progress = progress };
             TransferChanged?.Invoke(progress);
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)

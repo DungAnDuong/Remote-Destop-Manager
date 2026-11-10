@@ -63,7 +63,7 @@ public sealed class RemoteSession : IDisposable
 
     public Task SendChatAsync(string text) => _transfers.SendChatAsync(text, _cts.Token);
     public Task SendFileAsync(string path) => _transfers.SendFileAsync(path, _cts.Token);
-    public Task UploadAsync(string localPath, string remoteDir) => _transfers.SendFileAsync(localPath, remoteDir, _cts.Token);
+    public Task UploadAsync(string localPath, string remoteDir, bool overwrite = false) => _transfers.SendFileAsync(localPath, remoteDir, overwrite, _cts.Token);
     public Task<FsListing> ListRemoteAsync(string path) => _transfers.ListRemoteAsync(path, _cts.Token);
     public Task RequestDownloadAsync(string remotePath, string localDir) => _transfers.RequestDownloadAsync(remotePath, localDir, _cts.Token);
     public Task<(bool Ok, string Error)> MutateRemoteAsync(FsOp op, string path, string arg2) => _transfers.MutateRemoteAsync(op, path, arg2, _cts.Token);

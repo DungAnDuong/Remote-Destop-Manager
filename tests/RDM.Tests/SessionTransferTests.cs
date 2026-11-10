@@ -89,6 +89,24 @@ public class SessionTransferTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_dirB, "note (1).txt")));
     }
 
+    [Fact] // Ghi đè khi được xác nhận: gửi lại cùng tên với overwrite=true thì thay file cũ, không tạo "(1)".
+    public async Task SameName_WithOverwrite_ReplacesFile()
+    {
+        var (a, b) = Link();
+        var done = 0;
+        b.TransferChanged += p => { if (p.Status == TransferStatus.Completed) done++; };
+
+        File.WriteAllText(Path.Combine(_dirA, "note.txt"), "first");
+        await a.SendFileAsync(Path.Combine(_dirA, "note.txt"), _dirB, true, CancellationToken.None);
+        File.WriteAllText(Path.Combine(_dirA, "note.txt"), "second-longer");
+        await a.SendFileAsync(Path.Combine(_dirA, "note.txt"), _dirB, true, CancellationToken.None);
+
+        Assert.Equal(2, done);
+        Assert.True(File.Exists(Path.Combine(_dirB, "note.txt")));
+        Assert.False(File.Exists(Path.Combine(_dirB, "note (1).txt")));
+        Assert.Equal("second-longer", File.ReadAllText(Path.Combine(_dirB, "note.txt")));
+    }
+
     [Fact] // Khúc dữ liệu quá lớn bị từ chối, không làm hỏng vòng nhận.
     public async Task OversizedChunk_IsRejected()
     {

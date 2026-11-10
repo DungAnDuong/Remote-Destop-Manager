@@ -356,10 +356,23 @@ public class SessionEndToEndTests
         Assert.Equal(SessionDecline.Locked, (await Assert.ThrowsAsync<SessionRejectedException>(() => host.ConnectAsync(Pw))).Reason);
     }
 
-    [Fact] // Giới hạn phiên trên mỗi Client.
-    public async Task SecondController_IsBusy()
+    [Fact] // Nhiều người điều khiển cùng vào một máy: mặc định cho phép nhiều phiên.
+    public async Task MultipleControllers_AreAllowed()
     {
         using var host = new HostFixture();
+        using var first = new RemoteSession(await host.ConnectAsync());
+        first.Start();
+        await Wait.Until(() => host.Manager.Sessions.Count == 1, "phiên 1");
+        using var second = new RemoteSession(await host.ConnectAsync());
+        second.Start();
+        await Wait.Until(() => host.Manager.Sessions.Count == 2, "phiên 2");
+    }
+
+    [Fact] // Vẫn có thể đặt trần số phiên; vượt trần thì phiên mới bị Busy.
+    public async Task SessionsBeyondMax_AreBusy()
+    {
+        using var host = new HostFixture();
+        host.Manager.MaxSessions = 1;
         using var first = new RemoteSession(await host.ConnectAsync());
         first.Start();
         await Wait.Until(() => host.Manager.Sessions.Count == 1, "phiên đầu");

@@ -304,7 +304,10 @@ public sealed class HostSession
 /// <summary>Nhận kết nối, xác thực, giữ danh sách phiên. Nút tắt khẩn cấp của chủ máy đi qua lớp này.</summary>
 public sealed class SessionManager : IDisposable
 {
-    public const int MaxSessions = 1;
+    /// <summary>Số phiên tối đa cùng lúc vào máy này. Cho phép nhiều người điều khiển một máy (như TeamViewer);
+    /// vẫn có trần để một cơn kết nối dồn dập không làm quá tải CPU/băng thông của máy bị điều khiển.</summary>
+    public const int DefaultMaxSessions = 10;
+    public int MaxSessions { get; set; } = DefaultMaxSessions;
     private static readonly Logger Log = LogManager.GetCurrentClassLogger();
     private readonly ClientState _state;
     private readonly ClientAuthentication _auth;

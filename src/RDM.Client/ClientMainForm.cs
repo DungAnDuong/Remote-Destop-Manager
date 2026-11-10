@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using RDM.Controller.Controls;
@@ -257,7 +258,10 @@ public sealed class AllowControlPanel : UserControl
     private void UpdateSessionBar(IReadOnlyList<HostSession> sessions)
     {
         var session = sessions.Count == 0 ? null : sessions[0];
-        var user = session?.ControllerUser;
+        // Chống theo dõi lén: chỉ báo phải trung thực khi có nhiều người điều khiển, nên liệt kê tất cả.
+        var user = sessions.Count == 0 ? null
+            : sessions.Count == 1 ? sessions[0].ControllerUser
+            : string.Join(", ", sessions.Select(s => s.ControllerUser).Distinct());
         if (user != _controllingUser) { _controllingUser = user; ControllerChanged?.Invoke(user); }
 
         if (ReferenceEquals(session, _hostSession)) return;

@@ -750,6 +750,23 @@ public class QuickSessionTests
         Assert.Contains(rt.AuditLogs.Query(null, 5), a => a.EventType == AuditEvents.HostKeyPinned && a.Username == "windows:nguoi-dung-windows");
     }
 
+    [Fact] // Bản Managed đồng bộ cấu hình Relay đóng gói lúc khởi động, khi mới chỉ có quick session quyền Viewer:
+           // không được ném "no permission" (nếu không sẽ hiện hộp thoại lỗi và bỏ dở việc ghi -> trạng thái Unknown).
+    public void ApplyManagedRelay_WorksInQuickSession_AndPersists()
+    {
+        using var db = new TestDb();
+        db.Rt.Session.BeginQuickSession("u");
+        var rt = db.Rt;
+        Assert.False(rt.Session.Can(Permission.ManageSettings));
+
+        rt.Settings.ApplyManagedRelay("relay.example.net", 31408, "pin-value", "enroll-token");
+
+        Assert.Equal("relay.example.net", rt.Settings.Get(SettingKeys.RelayHost));
+        Assert.Equal("31408", rt.Settings.Get(SettingKeys.RelayPort));
+        Assert.Equal("pin-value", rt.Settings.Get(SettingKeys.RelayPin));
+        Assert.Equal("enroll-token", rt.Settings.Get(SettingKeys.RelayToken)); // Get tự giải mã token.
+    }
+
     [Fact] // Đăng nhập RDM với vai trò Viewer không được tự có thêm quyền kết nối.
     public void ViewerLogin_CannotQuickConnect_ButLogoutReturnsToQuickSession()
     {

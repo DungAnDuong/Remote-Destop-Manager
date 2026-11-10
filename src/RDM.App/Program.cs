@@ -85,14 +85,10 @@ internal static class Program
             });
             // Bản Managed: cấu hình Relay đóng gói chỉ áp cho phần client; đồng bộ sang settings của controller
             // để PresenceService kết nối Relay và hiển thị Online/Offline thật (không còn "Unknown").
+            // Dùng ApplyManagedRelay (không đòi quyền quản trị) vì lúc này mới chỉ có quick session quyền Viewer:
+            // gọi Set sẽ ném UnauthorizedAccessException ("account does not have permission") và bỏ dở việc ghi cấu hình.
             if (RDM.Shared.Common.ProductMode.Managed)
-                Ui.Try(null, () =>
-                {
-                    rt.Settings.Set(SettingKeys.RelayHost, state.RelayHost ?? "");
-                    rt.Settings.Set(SettingKeys.RelayPort, state.RelayPort.ToString());
-                    rt.Settings.Set(SettingKeys.RelayPin, state.RelayPin ?? "");
-                    rt.Settings.Set(SettingKeys.RelayToken, state.EnrollmentToken ?? "");
-                });
+                Ui.Try(null, () => rt.Settings.ApplyManagedRelay(state.RelayHost, state.RelayPort, state.RelayPin, state.EnrollmentToken));
 
             var activity = new ActivityLog(Path.Combine(clientDir, "activity.log"));
             var auth = new ClientAuthentication(store, state);

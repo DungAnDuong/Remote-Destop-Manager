@@ -75,11 +75,14 @@ if (-not $existing) {
 # PowerShell 5.1 lam mat dau ngoac kep khi truyen cho sc.exe; duong dan co dau cach khong ngoac la lo hong "unquoted service path".
 Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName" -Name ImagePath -Value "`"$exe`""
 & sc.exe failure $serviceName reset= 86400 actions= restart/5000/restart/30000/restart/60000 | Out-Null
+# Ban Managed (mot to chuc): dung chung ma dang ky lam token Controller, de phan quan ly thay Online/Offline that.
+# Moi may da cai deu nhung ma dang ky nay va deu la may cua chu, nen khong tach rieng bi mat Controller/thiet bi.
 $environment = @(
   "RDM_CERT_PASSWORD=$password",
   "Relay__CertificatePath=$pfx",
   "Relay__Port=$port",
-  "Relay__EnrollmentTokenSha256=$hash"
+  "Relay__EnrollmentTokenSha256=$hash",
+  "Relay__ControllerTokenSha256=$hash"
 )
 New-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName" -Name Environment -PropertyType MultiString -Value $environment -Force | Out-Null
 

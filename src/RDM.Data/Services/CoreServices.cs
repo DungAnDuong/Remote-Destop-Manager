@@ -487,4 +487,20 @@ public sealed class SettingsService
         // Giá trị mã hóa chỉ ghi tên khóa, không ghi nội dung.
         _audit.Write(AuditEvents.SettingChanged, _session.Username, details: encrypted ? $"{key} changed" : $"{key}: {old} -> {value}");
     }
+
+    /// <summary>
+    /// Đồng bộ cấu hình Relay đóng gói (bản Managed) vào settings lúc khởi động.
+    /// KHÔNG đòi quyền quản trị: đây là cấu hình nhúng do bộ cài quyết định, không phải thao tác người dùng,
+    /// và chạy khi vừa mở app lúc chỉ có quick session quyền Viewer. Chỉ ghi khi giá trị thực sự đổi để
+    /// không mã hóa lại token mỗi lần khởi động. Token lưu mã hóa, giống đường cấu hình thủ công.
+    /// </summary>
+    public void ApplyManagedRelay(string host, int port, string pin, string token)
+    {
+        host ??= ""; pin ??= ""; token ??= "";
+        var portText = port.ToString();
+        if (_repo.Get(SettingKeys.RelayHost, "") != host) _repo.Set(SettingKeys.RelayHost, host);
+        if (_repo.Get(SettingKeys.RelayPort, "") != portText) _repo.Set(SettingKeys.RelayPort, portText);
+        if (_repo.Get(SettingKeys.RelayPin, "") != pin) _repo.Set(SettingKeys.RelayPin, pin);
+        if (_repo.Get(SettingKeys.RelayToken, "") != token) _repo.Set(SettingKeys.RelayToken, token, encrypted: true);
+    }
 }

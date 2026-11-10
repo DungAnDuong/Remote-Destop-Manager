@@ -50,16 +50,24 @@ public static class ConnectFlow
         if (device != null && !device.IsEnabled) throw new ValidationException("This device is disabled in the list.");
         var name = device?.DeviceName ?? RemoteIdFormat.Display(remoteId);
 
+        // Vòng xoay "đang kết nối" cho mọi điểm gọi; tự đóng khi mở được cửa sổ remote hoặc khi lỗi/hủy.
+        using var busy = ConnectingForm.Begin(owner, "Connecting to " + name + "…");
+
         var route = await ResolveRouteAsync(rt, remoteId, device, manualAddress).ConfigureAwait(true);
 
         // Kết nối nhanh không đăng nhập thì không được đọc mật khẩu đã lưu.
         if (password == null && device?.HasCredential == true && rt.Session.Can(Permission.UseCredentials)) password = rt.Clients.UseCredential(device.Id);
         if (password == null)
         {
-            using var prompt = new PasswordPromptForm("Connect to " + name, "Remote computer's access password",
-                "This is the RDM password set by the computer's owner, not a Windows password. Leave blank if none is set; the owner must then accept on screen.", false, false, true);
-            if (prompt.ShowDialog(owner) != DialogResult.OK) return;
-            password = prompt.Password;
+            // Ẩn vòng xoay khi cần người dùng nhập, để không che hộp thoại mật khẩu.
+            busy.Visible = false;
+            using (var prompt = new PasswordPromptForm("Connect to " + name, "Remote computer's access password",
+                "This is the RDM password set by the computer's owner, not a Windows password. Leave blank if none is set; the owner must then accept on screen.", false, false, true))
+            {
+                if (prompt.ShowDialog(owner) != DialogResult.OK) return;
+                password = prompt.Password;
+            }
+            busy.Visible = true;
         }
 
         try

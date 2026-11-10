@@ -176,6 +176,9 @@ public sealed class HomeForm : Form
         if (sessions.Count > 0) _trayMenu.Items.Add(new ToolStripSeparator());
 
         _trayMenu.Items.Add("Open RDM", null, (s, e) => RestoreFromTray());
+        // Điều khiển cửa sổ quyền cao (UAC/IIS Manager...) cần agent chạy quyền Administrator. Chỉ hiện khi chưa nâng quyền.
+        if (!IsElevated())
+            _trayMenu.Items.Add("Run as administrator", null, (s, e) => RunAsAdministrator());
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add("Exit", null, (s, e) => { _exiting = true; Close(); });
 
@@ -188,6 +191,35 @@ public sealed class HomeForm : Form
     {
         if (IsDisposed) return;
         if (IsHandleCreated && InvokeRequired) BeginInvoke(new Action(RebuildTray)); else RebuildTray();
+    }
+
+    internal static bool IsElevated()
+    {
+        try
+        {
+            using var id = System.Security.Principal.WindowsIdentity.GetCurrent();
+            return new System.Security.Principal.WindowsPrincipal(id).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>
+    /// Khởi chạy lại RDM ở quyền Administrator để điều khiển được cửa sổ quyền cao (UIPI chặn input từ tiến trình quyền thấp).
+    /// Truyền --handover để bản mới chờ bản cũ thoát rồi mới chiếm mutex một-tiến-trình. Người dùng bấm No ở UAC thì giữ nguyên.
+    /// </summary>
+    private void RunAsAdministrator()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Application.ExecutablePath, "--handover")
+            {
+                UseShellExecute = true,
+                Verb = "runas"
+            });
+        }
+        catch (System.ComponentModel.Win32Exception) { return; }
+        _exiting = true;
+        Close();
     }
 
     private void HideToTray()

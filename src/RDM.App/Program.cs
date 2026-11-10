@@ -51,13 +51,21 @@ internal static class Program
         string mutexName;
         using (var sha = SHA256.Create())
             mutexName = @"Local\RDM." + BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(dataDir).ToLowerInvariant()))).Replace("-", "");
-        using var mutex = new Mutex(true, mutexName, out var first);
-        if (!first)
+        // --handover: bản được khởi chạy lại ở quyền Administrator chờ bản cũ thoát rồi mới chiếm mutex (tránh báo "đang chạy").
+        var handover = Array.IndexOf(args, "--handover") >= 0;
+        var mutex = new Mutex(false, mutexName);
+        bool owns;
+        try { owns = mutex.WaitOne(handover ? TimeSpan.FromSeconds(8) : TimeSpan.Zero); }
+        catch (AbandonedMutexException) { owns = true; }
+        if (!owns)
         {
-            MessageBox.Show("RDM is already running.", AllowControlPanel.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            mutex.Dispose();
+            if (!handover) MessageBox.Show("RDM is already running.", AllowControlPanel.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return 0;
         }
 
+        try
+        {
         var state = LoadState(store);
         if (state == null) return 1;
         try { RelayDefaults.ApplyEmbedded(store, state); }
@@ -107,6 +115,12 @@ internal static class Program
         }
         LogManager.Shutdown();
         return 0;
+        }
+        finally
+        {
+            try { mutex.ReleaseMutex(); } catch (Exception) { }
+            mutex.Dispose();
+        }
     }
 
     /// <summary>File trạng thái hỏng: phải hỏi chủ máy, vì đặt lại sẽ làm đổi Remote ID và khóa định danh.</summary>

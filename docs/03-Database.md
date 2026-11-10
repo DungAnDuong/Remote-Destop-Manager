@@ -1,6 +1,7 @@
 # 03 – SQLite Database Design (Step 5)
 
-**File:** `RDM_Database.db`, in `%LOCALAPPDATA%\RDM\` (user ACL). The folder can be changed with the `RDM_DATA_DIR` environment variable.
+**File:** `RDM_Database.db`, in `%LOCALAPPDATA%
+\RDM\` (user ACL). The folder can be changed with the `RDM_DATA_DIR` environment variable.
 
 **Connection settings:** WAL, `foreign_keys=ON`, `busy_timeout=5000`. Each operation opens a short, pooled connection and never holds a transaction across a network or UI call, so the database is never locked for long.
 

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using RDM.Controller.Services;
 using RDM.Controller.Theming;
+using RDM.Data;
 using RDM.Shared.Network;
 using RDM.Shared.Protocol;
 
@@ -20,6 +21,7 @@ namespace RDM.Controller.Forms;
 public sealed class FileManagerForm : Form
 {
     private readonly RemoteSession _session;
+    private readonly string _name;
     private readonly ListView _local = NewList();
     private readonly ListView _remote = NewList();
     private readonly TextBox _localPath = new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle };
@@ -38,6 +40,7 @@ public sealed class FileManagerForm : Form
     public FileManagerForm(RemoteSession session, string name)
     {
         _session = session;
+        _name = name ?? "";
         Text = "File Manager - " + name;
         Icon = Theme.AppIcon;
         Font = Theme.Font();
@@ -73,7 +76,14 @@ public sealed class FileManagerForm : Form
         _remote.KeyDown += (s, e) => OnListKey(true, e);
         _session.TransferChanged += OnTransfer;
         FormClosed += (s, e) => _session.TransferChanged -= OnTransfer;
-        Shown += async (s, e) => { LoadLocal(""); await LoadRemoteAsync(""); SplitAfterShown(split); };
+        Shown += async (s, e) =>
+        {
+            // Nhớ lại đường dẫn phiên trước: local toàn cục, remote theo từng máy. Đường dẫn cũ không còn thì về gốc.
+            var saved = LoadSavedPaths();
+            LoadLocal(saved.local);
+            if (!await LoadRemoteAsync(saved.remote) && saved.remote.Length != 0) await LoadRemoteAsync("");
+            SplitAfterShown(split);
+        };
     }
 
     private static void SplitAfterShown(SplitContainer split) { try { split.SplitterDistance = split.Width / 2; } catch (InvalidOperationException) { } }
@@ -147,6 +157,7 @@ public sealed class FileManagerForm : Form
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { SetStatus("Local: " + ex.Message); }
         _local.EndUpdate();
+        SavePaths();
     }
 
     private void EnterLocal(ListViewItem item)
@@ -166,13 +177,13 @@ public sealed class FileManagerForm : Form
 
     // --- Remote (máy ở xa) ---
 
-    private async Task LoadRemoteAsync(string dir)
+    private async Task<bool> LoadRemoteAsync(string dir)
     {
         SetStatus("Loading remote folder...");
         FsListing listing;
         try { listing = await _session.ListRemoteAsync(dir ?? ""); }
-        catch (Exception) { SetStatus("Could not read the remote folder."); return; }
-        if (!listing.Ok) { SetStatus("Remote: " + (listing.Error ?? "access denied")); return; }
+        catch (Exception) { SetStatus("Could not read the remote folder."); return false; }
+        if (!listing.Ok) { SetStatus("Remote: " + (listing.Error ?? "access denied")); return false; }
 
         _remoteDir = dir ?? "";
         _remotePath.Text = _remoteDir.Length == 0 ? "This PC (drives)" : _remoteDir;
@@ -183,6 +194,8 @@ public sealed class FileManagerForm : Form
             AddRow(_remote, e.Name, e.IsDirectory, e.IsDrive, e.Size, e.Modified, e.IsDrive ? e.Name : RemoteCombine(_remoteDir, e.Name));
         _remote.EndUpdate();
         SetStatus("Ready");
+        SavePaths();
+        return true;
     }
 
     private void EnterRemote(ListViewItem item)
@@ -205,6 +218,54 @@ public sealed class FileManagerForm : Form
     {
         if (dir.Length == 0) return name;
         return dir.EndsWith("\\") || dir.EndsWith("/") ? dir + name : dir + "\\" + name;
+    }
+
+    // --- Nhớ đường dẫn phiên trước ---
+    // File filemanager-paths.txt trong thư mục dữ liệu. Mỗi dòng cách nhau bằng tab (ký tự không hợp lệ trong đường dẫn
+    // và tên máy của Windows, nên an toàn làm dấu phân cách). local lưu toàn cục; remote lưu theo từng tên máy.
+
+    private static string PathsFile() => Path.Combine(SQLiteContext.DefaultDataDirectory(), "filemanager-paths.txt");
+
+    private (string local, string remote) LoadSavedPaths()
+    {
+        string local = "", remote = "";
+        try
+        {
+            foreach (var line in File.ReadAllLines(PathsFile()))
+            {
+                var p = line.Split('\t');
+                if (p.Length == 2 && p[0] == "local") local = p[1];
+                else if (p.Length == 3 && p[0] == "remote" && p[1] == _name) remote = p[2];
+            }
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
+        if (local.Length != 0 && !Directory.Exists(local)) local = "";
+        return (local, remote);
+    }
+
+    private void SavePaths()
+    {
+        try
+        {
+            var lines = new List<string>();
+            bool localDone = false, remoteDone = false;
+            try
+            {
+                foreach (var line in File.ReadAllLines(PathsFile()))
+                {
+                    var p = line.Split('\t');
+                    if (p.Length == 2 && p[0] == "local") { lines.Add("local\t" + _localDir); localDone = true; }
+                    else if (p.Length == 3 && p[0] == "remote" && p[1] == _name) { lines.Add("remote\t" + _name + "\t" + _remoteDir); remoteDone = true; }
+                    else lines.Add(line);
+                }
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) { }
+            if (!localDone) lines.Add("local\t" + _localDir);
+            if (!remoteDone) lines.Add("remote\t" + _name + "\t" + _remoteDir);
+            Directory.CreateDirectory(Path.GetDirectoryName(PathsFile()));
+            File.WriteAllLines(PathsFile(), lines);
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
     }
 
     // --- Truyền ---

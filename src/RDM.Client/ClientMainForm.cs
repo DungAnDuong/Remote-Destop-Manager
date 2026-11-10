@@ -27,11 +27,18 @@ public sealed class AllowControlPanel : UserControl
     private readonly DeviceInfo _info;
     private readonly SessionManager _sessions;
     private string _controllingUser;
-    private HostSession _hostSession;
-    private ChatWindow _chatWindow;
+    // Chat theo TỪNG phiên: nhiều người điều khiển cùng lúc thì mỗi người một cửa sổ chat riêng.
+    private readonly Dictionary<HostSession, ChatWindow> _chats = new Dictionary<HostSession, ChatWindow>();
+    private readonly HashSet<HostSession> _wired = new HashSet<HostSession>();
 
     /// <summary>Phát khi phiên điều khiển bắt đầu (tên người điều khiển) hoặc kết thúc (null), để biểu tượng khay cập nhật.</summary>
     public event Action<string> ControllerChanged;
+
+    /// <summary>Phát khi danh sách phiên điều khiển máy này thay đổi, để khay dựng lại menu các máy đang kết nối.</summary>
+    public event Action HostSessionsChanged;
+
+    /// <summary>Các phiên đang điều khiển máy này (để khay liệt kê và mở chat từng phiên).</summary>
+    public IReadOnlyList<HostSession> ActiveSessions => _sessions.Sessions;
 
     /// <summary>Ngắt mọi phiên đang điều khiển máy này; dùng cho menu của biểu tượng khay.</summary>
     public void DisconnectAll() => _sessions.DisconnectAll();
@@ -52,12 +59,19 @@ public sealed class AllowControlPanel : UserControl
         _sessions.AskOwner = AskOwnerAsync;
         _sessions.Changed += OnConnectionChanged;
         _sessions.Activity += m => { _log.Write(m); OnConnectionChanged(); };
-        Load += (s, e) =>
-        {
-            TryStartListening();
-            _connection.Start();
-            UpdateView();
-        };
+        Load += (s, e) => StartBackground();
+    }
+
+    private bool _started;
+
+    /// <summary>Mở cổng nhận kết nối và kết nối Relay. Idempotent; gọi được cả khi cửa sổ chạy ẩn (tự khởi động cùng Windows).</summary>
+    public void StartBackground()
+    {
+        if (_started) return;
+        _started = true;
+        TryStartListening();
+        _connection.Start();
+        UpdateView();
     }
 
     /// <summary>Dừng nhận kết nối và ngắt mọi phiên khi đóng chương trình.</summary>
@@ -67,8 +81,9 @@ public sealed class AllowControlPanel : UserControl
         _sessions.Changed -= OnConnectionChanged;
         _sessions.AskOwner = null;
         _sessions.Dispose();
-        if (_hostSession != null) { _hostSession.ChatReceived -= OnHostChat; _hostSession.TransferChanged -= OnHostTransfer; _hostSession = null; }
-        _chatWindow?.Dispose();
+        foreach (var w in _chats.Values) { if (!w.IsDisposed) w.Dispose(); }
+        _chats.Clear();
+        _wired.Clear();
         ControllerChanged?.Invoke(null);
     }
 
@@ -257,65 +272,69 @@ public sealed class AllowControlPanel : UserControl
     /// <summary>Báo trạng thái phiên cho biểu tượng khay của cửa sổ chính (chủ máy vẫn luôn thấy và ngắt được qua khay).</summary>
     private void UpdateSessionBar(IReadOnlyList<HostSession> sessions)
     {
-        var session = sessions.Count == 0 ? null : sessions[0];
         // Chống theo dõi lén: chỉ báo phải trung thực khi có nhiều người điều khiển, nên liệt kê tất cả.
         var user = sessions.Count == 0 ? null
             : sessions.Count == 1 ? sessions[0].ControllerUser
             : string.Join(", ", sessions.Select(s => s.ControllerUser).Distinct());
         if (user != _controllingUser) { _controllingUser = user; ControllerChanged?.Invoke(user); }
 
-        if (ReferenceEquals(session, _hostSession)) return;
-        if (_hostSession != null) { _hostSession.ChatReceived -= OnHostChat; _hostSession.TransferChanged -= OnHostTransfer; }
-        _hostSession = session;
-        // Nghe chat và chỉ tiến độ file GỬI ĐI: khi nhận file (kể cả qua trình quản lý file) máy bị điều khiển không hiển thị gì.
-        if (session != null) { session.ChatReceived += OnHostChat; session.TransferChanged += OnHostTransfer; }
+        // Phiên mới: gắn lắng nghe chat/tiến độ gửi file cho riêng phiên đó (lambda bắt lấy s).
+        // Phiên đã kết thúc: đóng cửa sổ chat tương ứng. Không cần gỡ sự kiện vì phiên cũ không phát nữa.
+        var current = new HashSet<HostSession>(sessions);
+        foreach (var gone in _wired.Where(s => !current.Contains(s)).ToList())
+        {
+            _wired.Remove(gone);
+            if (_chats.TryGetValue(gone, out var w)) { _chats.Remove(gone); if (!w.IsDisposed) { try { w.Close(); } catch (Exception) { } } }
+        }
+        foreach (var s in sessions)
+        {
+            if (!_wired.Add(s)) continue;
+            var session = s;
+            session.ChatReceived += m => OnHostChat(session, m);
+            session.TransferChanged += p => OnHostTransfer(session, p);
+        }
+        HostSessionsChanged?.Invoke();
     }
 
-    private void OnHostChat(ChatMessage m)
+    private void OnHostChat(HostSession s, ChatMessage m)
     {
         if (IsDisposed) return;
-        BeginInvoke(new Action(() => ShowChat().AddIncoming(m.Text)));
+        BeginInvoke(new Action(() => ShowChat(s)?.AddIncoming(m.Text)));
     }
 
     // File qua chat (ToFolder=false) hiển thị ở cửa sổ chat cả khi gửi và nhận.
     // File qua trình quản lý file (ToFolder=true) máy bị điều khiển không hiển thị gì.
-    private void OnHostTransfer(FileTransferProgress p)
+    private void OnHostTransfer(HostSession s, FileTransferProgress p)
     {
         if (IsDisposed || p.ToFolder) return;
-        BeginInvoke(new Action(() => ShowChat().UpdateTransfer(p)));
+        BeginInvoke(new Action(() => ShowChat(s)?.UpdateTransfer(p)));
     }
 
-    /// <summary>Mở (nếu cần) cửa sổ chat của máy được điều khiển và trả về bảng chat để ghi tiếp.</summary>
-    private ChatPanel ShowChat()
+    /// <summary>Mở (nếu cần) cửa sổ chat của MỘT phiên điều khiển và trả về bảng chat để ghi tiếp. Dùng cho menu khay.</summary>
+    public ChatPanel ShowChat(HostSession s)
     {
-        if (_chatWindow == null || _chatWindow.IsDisposed)
+        if (s == null || IsDisposed) return null;
+        if (!_chats.TryGetValue(s, out var win) || win.IsDisposed)
         {
-            _chatWindow = new ChatWindow(_controllingUser ?? "Controller");
-            _chatWindow.Panel.ChatEntered += text =>
+            win = new ChatWindow(s.ControllerUser ?? "Controller");
+            win.Panel.ChatEntered += text => { win.Panel.AddOutgoing(text); _ = QuietTask(s.SendChatAsync(text)); };
+            win.Panel.SendFileRequested += () =>
             {
-                var s = _hostSession;
-                if (s == null) return;
-                _chatWindow.Panel.AddOutgoing(text);
-                _ = QuietTask(s.SendChatAsync(text));
-            };
-            _chatWindow.Panel.SendFileRequested += () =>
-            {
-                var s = _hostSession;
-                if (s == null) return;
                 using var dialog = new OpenFileDialog { Title = "Send a file to the controller", Multiselect = true };
-                if (dialog.ShowDialog(_chatWindow) != DialogResult.OK) return;
+                if (dialog.ShowDialog(win) != DialogResult.OK) return;
                 foreach (var path in dialog.FileNames) _ = QuietTask(s.SendFileAsync(path));
             };
-            _chatWindow.Panel.PauseRequested += id => _hostSession?.PauseTransfer(id);
-            _chatWindow.Panel.ResumeRequested += id => _hostSession?.ResumeTransfer(id);
-            _chatWindow.Panel.CancelRequested += id => _hostSession?.CancelTransfer(id);
+            win.Panel.PauseRequested += id => s.PauseTransfer(id);
+            win.Panel.ResumeRequested += id => s.ResumeTransfer(id);
+            win.Panel.CancelRequested += id => s.CancelTransfer(id);
+            _chats[s] = win;
         }
         // Chỉ đưa cửa sổ lên trước khi mới hiện lại, tránh cướp tiêu điểm theo từng khúc tiến độ.
-        var wasHidden = !_chatWindow.Visible;
-        if (!_chatWindow.Visible) _chatWindow.Show();
-        if (_chatWindow.WindowState == FormWindowState.Minimized) _chatWindow.WindowState = FormWindowState.Normal;
-        if (wasHidden) _chatWindow.Activate();
-        return _chatWindow.Panel;
+        var wasHidden = !win.Visible;
+        if (!win.Visible) win.Show();
+        if (win.WindowState == FormWindowState.Minimized) win.WindowState = FormWindowState.Normal;
+        if (wasHidden) win.Activate();
+        return win.Panel;
     }
 
     private static async Task QuietTask(Task t) { try { await t.ConfigureAwait(false); } catch (Exception) { } }

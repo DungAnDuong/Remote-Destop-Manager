@@ -32,6 +32,8 @@ internal static class Program
                     return 0;
             }
         }
+        // Tự khởi động cùng Windows: chạy ẩn xuống khay, không hiện cửa sổ chính.
+        var startHidden = Array.IndexOf(args, StartupManager.StartupArg) >= 0;
 
         var store = new ClientStateStore(ClientStateStore.DefaultPath());
         var clientDir = Path.GetDirectoryName(store.Path);
@@ -99,7 +101,7 @@ internal static class Program
             connection.IncomingSession += sessions.AcceptRelayed;
             RDM.Controller.Services.ConnectFlow.Broker = connection;
             activity.Write("RDM started");
-            Application.Run(new HomeForm(rt, new AllowControlPanel(store, state, auth, connection, activity, info, sessions)));
+            Application.Run(new HomeForm(rt, new AllowControlPanel(store, state, auth, connection, activity, info, sessions), startHidden));
             activity.Write("RDM closed");
             rt.Presence.StopAsync().GetAwaiter().GetResult();
         }

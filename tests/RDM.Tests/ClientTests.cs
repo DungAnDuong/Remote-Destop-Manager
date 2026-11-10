@@ -377,7 +377,7 @@ public class ClientSupportTests
             Assert.False(s.IsEnabled);
             s.Set(true, @"C:\App Thu\RDM.Client.exe");
             Assert.True(s.IsEnabled);
-            using (var k = Registry.CurrentUser.OpenSubKey(key)) Assert.Equal("\"C:\\App Thu\\RDM.Client.exe\"", k.GetValue("RDM Client"));
+            using (var k = Registry.CurrentUser.OpenSubKey(key)) Assert.Equal("\"C:\\App Thu\\RDM.Client.exe\" --startup", k.GetValue("RDM Client"));
             s.Set(false, null);
             Assert.False(s.IsEnabled);
         }

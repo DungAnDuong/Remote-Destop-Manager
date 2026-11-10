@@ -182,10 +182,13 @@ public sealed class StartupManager
         get { using var key = Registry.CurrentUser.OpenSubKey(_keyPath); return key?.GetValue(ValueName) != null; }
     }
 
+    /// <summary>Cờ báo được khởi chạy do tự khởi động cùng Windows, để chạy ẩn xuống khay thay vì hiện cửa sổ.</summary>
+    public const string StartupArg = "--startup";
+
     public void Set(bool enabled, string exePath)
     {
         using var key = Registry.CurrentUser.CreateSubKey(_keyPath);
-        if (enabled) key.SetValue(ValueName, "\"" + exePath + "\"");
+        if (enabled) key.SetValue(ValueName, "\"" + exePath + "\" " + StartupArg);
         else key.DeleteValue(ValueName, false);
     }
 }

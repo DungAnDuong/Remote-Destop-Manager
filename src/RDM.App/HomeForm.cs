@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using RDM.Client;
@@ -31,12 +32,13 @@ public sealed class HomeForm : Form
     private bool _splitReady;
     private readonly NotifyIcon _tray = new NotifyIcon { Visible = true };
     private readonly ContextMenuStrip _trayMenu = new ContextMenuStrip();
-    private ToolStripMenuItem _trayStatus, _trayDisconnect;
     private bool _exiting;
+    private readonly bool _startHidden;
+    private bool _firstShowHandled;
 
-    public HomeForm(RdmRuntime rt, AllowControlPanel allow)
+    public HomeForm(RdmRuntime rt, AllowControlPanel allow, bool startHidden = false)
     {
-        _rt = rt; _allow = allow;
+        _rt = rt; _allow = allow; _startHidden = startHidden;
         Text = "REMOTE DESKTOP MANAGER";
         Icon = Theme.AppIcon;
         Font = Theme.Font();
@@ -106,7 +108,7 @@ public sealed class HomeForm : Form
         };
         SessionRegistry.Changed += OnSessionsChanged;
         BuildTray();
-        _allow.ControllerChanged += OnControllerChanged;
+        _allow.HostSessionsChanged += OnHostSessionsChanged;
         // Đóng cửa sổ chỉ thu nhỏ xuống khay; thoát hẳn qua menu Exit của biểu tượng khay.
         FormClosing += (s, e) =>
         {
@@ -122,24 +124,70 @@ public sealed class HomeForm : Form
             _tray.Visible = false;
             _tray.Dispose();
         };
-        FormClosed += (s, e) => SessionRegistry.Changed -= OnSessionsChanged;
+        FormClosed += (s, e) => { SessionRegistry.Changed -= OnSessionsChanged; _allow.HostSessionsChanged -= OnHostSessionsChanged; };
+
+        // Tự khởi động cùng Windows (chạy ẩn): cửa sổ không hiện nên Load của panel không chạy sớm;
+        // khởi động nền ngay để máy vẫn nhận được kết nối remote khi đang ẩn dưới khay.
+        if (_startHidden) _allow.StartBackground();
+    }
+
+    // Tự khởi động cùng Windows: chạy ẩn xuống khay, không hiện cửa sổ chính. Chặn lần hiện đầu tiên,
+    // vẫn tạo handle để nền (nhận kết nối, biểu tượng khay) chạy; người dùng mở lại từ khay.
+    protected override void SetVisibleCore(bool value)
+    {
+        if (value && _startHidden && !_firstShowHandled)
+        {
+            _firstShowHandled = true;
+            if (!IsHandleCreated) CreateHandle();
+            base.SetVisibleCore(false);
+            return;
+        }
+        base.SetVisibleCore(value);
     }
 
     private void BuildTray()
     {
-        _trayStatus = new ToolStripMenuItem("RDM is running") { Enabled = false };
-        _trayMenu.Items.Add(_trayStatus);
-        _trayMenu.Items.Add(new ToolStripSeparator());
-        _trayMenu.Items.Add("Open RDM", null, (s, e) => RestoreFromTray());
-        _trayDisconnect = new ToolStripMenuItem("Disconnect current session", null, (s, e) => _allow.DisconnectAll()) { Visible = false };
-        _trayMenu.Items.Add(_trayDisconnect);
-        _trayMenu.Items.Add(new ToolStripSeparator());
-        _trayMenu.Items.Add("Exit", null, (s, e) => { _exiting = true; Close(); });
-
         _tray.Icon = Theme.AppIcon;
         _tray.Text = "RDM - Remote Desktop Manager";
         _tray.ContextMenuStrip = _trayMenu;
         _tray.DoubleClick += (s, e) => RestoreFromTray();
+        RebuildTray();
+    }
+
+    /// <summary>Dựng lại menu khay: liệt kê từng máy đang điều khiển máy này, mỗi máy có Chat và Disconnect.</summary>
+    private void RebuildTray()
+    {
+        if (IsDisposed) return;
+        var sessions = _allow.ActiveSessions;
+        _trayMenu.Items.Clear();
+        _trayMenu.Items.Add(new ToolStripMenuItem(
+            sessions.Count == 0 ? "RDM is running"
+            : sessions.Count == 1 ? "Being controlled by 1 controller"
+            : $"Being controlled by {sessions.Count} controllers") { Enabled = false });
+        _trayMenu.Items.Add(new ToolStripSeparator());
+
+        foreach (var session in sessions)
+        {
+            var item = new ToolStripMenuItem(session.ControllerUser ?? "Controller");
+            item.DropDownItems.Add("Chat", null, (s, e) => { _allow.ShowChat(session); });
+            item.DropDownItems.Add("Disconnect", null, (s, e) => session.Disconnect());
+            _trayMenu.Items.Add(item);
+        }
+        if (sessions.Count > 0) _trayMenu.Items.Add(new ToolStripSeparator());
+
+        _trayMenu.Items.Add("Open RDM", null, (s, e) => RestoreFromTray());
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add("Exit", null, (s, e) => { _exiting = true; Close(); });
+
+        var active = sessions.Count > 0;
+        var tip = active ? "RDM - being controlled by " + string.Join(", ", sessions.Select(s => s.ControllerUser)) : "RDM - Remote Desktop Manager";
+        _tray.Text = tip.Length <= 63 ? tip : tip.Substring(0, 60) + "...";
+    }
+
+    private void OnHostSessionsChanged()
+    {
+        if (IsDisposed) return;
+        if (IsHandleCreated && InvokeRequired) BeginInvoke(new Action(RebuildTray)); else RebuildTray();
     }
 
     private void HideToTray()
@@ -154,21 +202,6 @@ public sealed class HomeForm : Form
         Show();
         WindowState = FormWindowState.Normal;
         Activate();
-    }
-
-    /// <summary>Biểu tượng khay phản ánh phiên đang điều khiển máy này, kèm lệnh ngắt. Chủ máy luôn thấy, không phải cảnh báo bật lên.</summary>
-    private void OnControllerChanged(string user)
-    {
-        if (IsDisposed) return;
-        void Apply()
-        {
-            var active = !string.IsNullOrEmpty(user);
-            _trayDisconnect.Visible = active;
-            _trayStatus.Text = active ? "Being controlled by: " + user : "RDM is running";
-            var tip = active ? "RDM - being controlled by " + user : "RDM - Remote Desktop Manager";
-            _tray.Text = tip.Length <= 63 ? tip : tip.Substring(0, 60) + "...";
-        }
-        if (IsHandleCreated && InvokeRequired) BeginInvoke(new Action(Apply)); else Apply();
     }
 
     // Lưu/đọc vị trí thanh chia để lần sau mở lại giữ nguyên kích thước vùng tab.

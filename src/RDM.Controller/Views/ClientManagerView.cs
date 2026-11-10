@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -24,6 +25,7 @@ public sealed class ClientManagerView : ViewBase
     private readonly Timer _debounce = new Timer { Interval = 250 };
     private List<DeviceGroup> _groups = new List<DeviceGroup>();
     private int _loadTicket;
+    private int _statusCol = -1;
 
     public ClientManagerView(RdmRuntime rt, bool favoritesOnly) : base(rt)
     {
@@ -37,9 +39,12 @@ public sealed class ClientManagerView : ViewBase
              .AddColumn("Group", d => d.GroupName, 75)
              .AddColumn("IP Address", d => d.IpAddress, 70)
              .AddColumn("OS", d => d.OperatingSystem, 80)
-             .AddColumn("Status", d => (Rt.Presence.IsOnline(d) ? "\U0001F7E2 " : "⚪ ") + Rt.Presence.StatusText(d), 110)
+             .AddColumn("Status", d => Rt.Presence.StatusText(d), 110)
              .AddColumn("Last Online", d => Ui.When(d.LastOnline), 95);
         _grid.CellDoubleClick += async (s, e) => { if (e.RowIndex >= 0) await ConnectSelectedAsync(); };
+        // Tự vẽ đèn trạng thái bằng màu thật: emoji 🟢 bị DataGridView (GDI) vẽ đơn sắc thành xám.
+        _statusCol = _grid.Columns.Cast<DataGridViewColumn>().ToList().FindIndex(c => c.HeaderText == "Status");
+        _grid.CellPainting += OnStatusCellPainting;
 
         var bar = Toolbar();
         _search.Width = Dpi.S(280);
@@ -127,6 +132,39 @@ public sealed class ClientManagerView : ViewBase
     {
         if (disposing) _debounce.Dispose();
         base.Dispose(disposing);
+    }
+
+    /// <summary>Màu đèn trạng thái: xanh = Online, cam = Online nhưng tắt truy cập, xám = Offline/Chưa rõ/Vô hiệu.</summary>
+    private Color StatusColor(ClientDevice d)
+    {
+        if (!d.IsEnabled) return Theme.TextMuted;
+        if (!Rt.Presence.IsOnline(d)) return Color.FromArgb(0x9A, 0x9F, 0xA6);
+        return Rt.Presence.StatusText(d) == "Online (access off)"
+            ? Color.FromArgb(0xE0, 0x8A, 0x1E)
+            : Color.FromArgb(0x2E, 0xA8, 0x43);
+    }
+
+    private void OnStatusCellPainting(object sender, DataGridViewCellPaintingEventArgs e)
+    {
+        if (e.ColumnIndex != _statusCol || e.RowIndex < 0 || e.RowIndex >= _grid.Items.Count) return;
+        var d = _grid.Items[e.RowIndex];
+        var selected = (e.State & DataGridViewElementStates.Selected) != 0;
+        e.PaintBackground(e.CellBounds, selected);
+
+        var dot = Dpi.S(10);
+        var x = e.CellBounds.Left + Dpi.S(8);
+        var y = e.CellBounds.Top + (e.CellBounds.Height - dot) / 2;
+        var old = e.Graphics.SmoothingMode;
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var b = new SolidBrush(StatusColor(d))) e.Graphics.FillEllipse(b, x, y, dot, dot);
+        e.Graphics.SmoothingMode = old;
+
+        var textLeft = x + dot + Dpi.S(6);
+        var bounds = new Rectangle(textLeft, e.CellBounds.Top, e.CellBounds.Right - textLeft - Dpi.S(2), e.CellBounds.Height);
+        var fore = selected ? e.CellStyle.SelectionForeColor : e.CellStyle.ForeColor;
+        TextRenderer.DrawText(e.Graphics, Rt.Presence.StatusText(d), e.CellStyle.Font, bounds, fore,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        e.Handled = true;
     }
 
     private void Add(FlowLayoutPanel bar, string text, bool enabled, Func<Task> action, ButtonKind kind = ButtonKind.Secondary)

@@ -99,29 +99,32 @@ public sealed class ChatPanel : UserControl
 
         _input.Font = Theme.Font(10.5f);
         _input.BorderStyle = BorderStyle.None;
+        _input.ForeColor = Theme.Text;
+        _input.BackColor = Theme.Surface;
         _input.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Enter(); } };
 
-        // Hàng nhập kiểu Zalo: đính kèm + mặt cười bên trái, Like + Send (máy bay) bên phải, ô chữ ở giữa.
-        var attach = IconButton(DrawAttach(Dpi.S(22)));
-        attach.Dock = DockStyle.Left;
-        attach.Click += (s, e) => SendFileRequested?.Invoke();
-        var emoji = IconButton(DrawSmiley(Dpi.S(22)));
-        emoji.Dock = DockStyle.Left;
-        emoji.Click += (s, e) => ShowEmojiPicker(emoji);
+        // Hàng nhập: ô chữ bên trái; Send rồi tới mặt cười / đính kèm / like đều nằm BÊN PHẢI nút Send.
         var send = IconButton(DrawSend(Dpi.S(22)));
         send.Dock = DockStyle.Right;
         send.Click += (s, e) => Enter();
+        var emoji = IconButton(DrawSmiley(Dpi.S(22)));
+        emoji.Dock = DockStyle.Right;
+        emoji.Click += (s, e) => ShowEmojiPicker(emoji);
+        var attach = IconButton(DrawAttach(Dpi.S(22)));
+        attach.Dock = DockStyle.Right;
+        attach.Click += (s, e) => SendFileRequested?.Invoke();
         var like = IconButton(DrawLike(Dpi.S(22)));
         like.Dock = DockStyle.Right;
         like.Click += (s, e) => ChatEntered?.Invoke("\U0001F44D");
 
-        var wrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Padding = new Padding(Dpi.S(4), Dpi.S(12), Dpi.S(4), 0) };
+        var wrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Padding = new Padding(Dpi.S(8), Dpi.S(13), Dpi.S(4), 0) };
         wrap.Controls.Add(_input);
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = Dpi.S(48), BackColor = Theme.Surface, Padding = new Padding(Dpi.S(4), Dpi.S(3), Dpi.S(4), Dpi.S(3)) };
-        bottom.Controls.Add(send);
+        // Thêm theo thứ tự far-right -> gần input: like, attach, emoji, send; cuối cùng là ô chữ (fill).
         bottom.Controls.Add(like);
         bottom.Controls.Add(attach);
         bottom.Controls.Add(emoji);
+        bottom.Controls.Add(send);
         bottom.Controls.Add(wrap);
 
         Controls.Add(_list);
@@ -394,14 +397,16 @@ public sealed class ChatPanel : UserControl
         private readonly int _id;
         private readonly bool _incoming;
         private readonly Action<int> _onPause, _onResume, _onCancel;
-        private readonly Button _pause, _cancel;
+        private readonly Button _pause, _cancel, _open, _folder;
         private Image _icon;
         private string _name = "";
         private string _status = "";
+        private string _savePath;
         private float _progress;
         private bool _done, _paused, _active;
 
         public bool Mine => !_incoming;
+        private bool HasButtons => _cancel.Visible || _pause.Visible || _open.Visible || _folder.Visible;
 
         public FileEntry(int id, bool incoming, string peer, Action<int> onPause, Action<int> onResume, Action<int> onCancel)
         {
@@ -419,8 +424,14 @@ public sealed class ChatPanel : UserControl
             };
             _cancel = IconButton("✕");
             _cancel.Click += (s, e) => { if (!_done) _onCancel?.Invoke(_id); };
+            _open = IconButton("↗");          // mở file
+            _open.Click += (s, e) => OpenFile();
+            _folder = IconButton("\U0001F4C1");    // mở thư mục chứa
+            _folder.Click += (s, e) => OpenFolder();
             Controls.Add(_pause);
             Controls.Add(_cancel);
+            Controls.Add(_open);
+            Controls.Add(_folder);
             Resize += (s, e) => LayoutButtons();
         }
 
@@ -431,29 +442,54 @@ public sealed class ChatPanel : UserControl
             return b;
         }
 
+        private void OpenFile()
+        {
+            if (string.IsNullOrEmpty(_savePath)) return;
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_savePath) { UseShellExecute = true }); }
+            catch (Exception) { }
+        }
+
+        private void OpenFolder()
+        {
+            if (string.IsNullOrEmpty(_savePath)) return;
+            try { System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + _savePath + "\""); }
+            catch (Exception) { }
+        }
+
+        // Đặt các nút đang hiện từ phải sang trái (ưu tiên: hủy / mở ở ngoài cùng, tạm ngưng / thư mục kế bên).
         private void LayoutButtons()
         {
             int bw = Dpi.S(26), bh = Dpi.S(24), pad = Dpi.S(8), gap = Dpi.S(4), y = (Height - bh) / 2;
-            _cancel.SetBounds(Width - pad - bw, y, bw, bh);
-            _pause.SetBounds(Width - pad - bw * 2 - gap, y, bw, bh);
+            int x = Width - pad - bw;
+            foreach (var b in new[] { _cancel, _open, _pause, _folder })
+            {
+                if (!b.Visible) continue;
+                b.SetBounds(x, y, bw, bh);
+                x -= bw + gap;
+            }
         }
 
         public void Update(FileTransferProgress p)
         {
             if (_icon == null) { _name = p.FileName; _icon = FileIconFor(p.FileName, Dpi.S(34)); }
+            if (!string.IsNullOrEmpty(p.SavePath)) _savePath = p.SavePath;
             _progress = p.TotalBytes > 0 ? Math.Min(1f, Math.Max(0f, (float)p.TransferredBytes / p.TotalBytes)) : (p.Status == TransferStatus.Completed ? 1f : 0f);
             int pct = (int)Math.Round(_progress * 100);
             string sent = FormatSize(p.TransferredBytes), total = FormatSize(p.TotalBytes);
             switch (p.Status)
             {
                 case TransferStatus.Completed: _status = (_incoming ? "Received" : "Sent") + "  ✓  " + total; _done = true; _active = false; _progress = 1f; break;
-                case TransferStatus.Failed: _status = "Failed  -  " + total; _done = true; _active = false; break;
+                case TransferStatus.Failed: _status = "Failed" + (string.IsNullOrEmpty(p.Error) ? "" : "  -  " + p.Error); _done = true; _active = false; break;
                 case TransferStatus.Canceled: _status = "Canceled"; _done = true; _active = false; break;
                 case TransferStatus.Paused: _status = $"Paused  {pct}%  ({sent} / {total})"; _active = true; break;
                 default: _status = $"{pct}%  ({sent} / {total})"; _active = true; break;
             }
             _pause.Visible = _active && !_incoming;
             _cancel.Visible = _active;
+            // Xong và còn file trên đĩa: cho mở file / mở thư mục chứa (cả bên nhận lẫn bên gửi).
+            var canOpen = p.Status == TransferStatus.Completed && !string.IsNullOrEmpty(_savePath);
+            _open.Visible = canOpen;
+            _folder.Visible = canOpen;
             LayoutButtons();
             Invalidate();
         }
@@ -471,7 +507,7 @@ public sealed class ChatPanel : UserControl
             if (_icon != null) g.DrawImage(_icon, new Rectangle(pad, (Height - iconSize) / 2, iconSize, iconSize));
 
             int textLeft = pad + iconSize + Dpi.S(8);
-            int rightPad = _active ? Dpi.S(72) : Dpi.S(10);
+            int rightPad = HasButtons ? Dpi.S(72) : Dpi.S(10);
             var nameRect = new Rectangle(textLeft, Dpi.S(9), Math.Max(Dpi.S(20), Width - textLeft - rightPad), Dpi.S(18));
             TextRenderer.DrawText(g, _name, Theme.Font(9.5f, true), nameRect, Theme.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
             var statRect = new Rectangle(textLeft, Dpi.S(28), Math.Max(Dpi.S(20), Width - textLeft - rightPad), Dpi.S(16));

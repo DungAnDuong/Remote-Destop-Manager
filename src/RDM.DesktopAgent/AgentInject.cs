@@ -13,7 +13,6 @@ internal static class AgentInject
     private const uint MOVE = 0x0001, LEFTDOWN = 0x0002, LEFTUP = 0x0004, RIGHTDOWN = 0x0008, RIGHTUP = 0x0010,
         MIDDLEDOWN = 0x0020, MIDDLEUP = 0x0040, WHEEL = 0x0800, VIRTUALDESK = 0x4000, ABSOLUTE = 0x8000;
     private const uint KEYUP = 0x0002, EXTENDED = 0x0001, UNICODE = 0x0004, SCANCODE = 0x0008;
-    private const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77, SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79;
 
     [StructLayout(LayoutKind.Sequential)] private struct MOUSEINPUT { public int Dx, Dy; public int Data; public uint Flags, Time; public IntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] private struct KEYBDINPUT { public ushort Vk, Scan; public uint Flags, Time; public IntPtr Extra; }
@@ -21,22 +20,22 @@ internal static class AgentInject
     [StructLayout(LayoutKind.Sequential)] private struct INPUT { public int Type; public InputUnion U; }
 
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
-    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
 
     // Mã thao tác chuột khớp với RDM.Shared.Protocol.MouseAction (giữ đồng bộ bằng số, không tham chiếu project để agent gọn).
     private const byte Move = 0, LeftDown = 1, LeftUp = 2, RightDown = 3, RightUp = 4, MiddleDown = 5, MiddleUp = 6, WheelAct = 7;
 
-    /// <summary>px,py là toạ độ pixel trên màn hình ảo (do máy điều khiển đã quy đổi theo monitor đang xem).</summary>
-    public static void Mouse(int px, int py, byte action, int wheel)
+    /// <summary>
+    /// nx,ny la toa do CHUAN HOA 0..65535 so voi KHUNG agent gui (toan bo man hinh ao). Vi co MOUSEEVENTF_VIRTUALDESK,
+    /// gia tri absolute 0..65535 cung map vao toan bo man hinh ao, nen nx/ny chinh la toa do absolute can dung.
+    /// </summary>
+    public static void Mouse(int nx, int ny, byte action, int wheel)
     {
         DesktopCapture.RunOnInputDesktop(_ =>
         {
-            var vx = GetSystemMetrics(SM_XVIRTUALSCREEN); var vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-            var vw = Math.Max(2, GetSystemMetrics(SM_CXVIRTUALSCREEN)); var vh = Math.Max(2, GetSystemMetrics(SM_CYVIRTUALSCREEN));
             var input = new MOUSEINPUT
             {
-                Dx = (int)((long)(px - vx) * 65535 / (vw - 1)),
-                Dy = (int)((long)(py - vy) * 65535 / (vh - 1)),
+                Dx = Math.Max(0, Math.Min(65535, nx)),
+                Dy = Math.Max(0, Math.Min(65535, ny)),
                 Flags = MOVE | ABSOLUTE | VIRTUALDESK
             };
             switch (action)

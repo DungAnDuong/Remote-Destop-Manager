@@ -160,7 +160,7 @@ public sealed class HostFixture : IDisposable
         State.SessionPort = 0;
         Auth = new ClientAuthentication(Temp.Store, State, 1000);
         Identity = DeviceIdentity.FromSeed(State.IdentitySeed);
-        Manager = new SessionManager(State, Auth, () => Screen, () => Input)
+        Manager = new SessionManager(State, Auth, () => ((IScreenSource)Screen, (IInputSink)Input))
         {
             DiscoveryPort = 0,
             AskOwner = (peer, ct) => { Interlocked.Increment(ref Asked); return Task.FromResult(OwnerAnswer); }

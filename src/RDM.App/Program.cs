@@ -105,7 +105,13 @@ internal static class Program
             var info = DeviceInfoProvider.Collect();
             info.SessionPort = state.SessionPort;
             using var connection = new ConnectionManager(store, state, info);
-            using var sessions = new SessionManager(state, auth, () => new GdiScreenCapture(), () => new SendInputController());
+            // Mỗi phiên: nếu RDM.DesktopAgent (dịch vụ SYSTEM) đang chạy thì dùng nguồn "lai" để điều khiển được cả
+            // secure desktop (UAC/màn hình khóa); không có agent thì HybridDesktop chạy y hệt GDI + SendInput như trước.
+            using var sessions = new SessionManager(state, auth, () =>
+            {
+                var hybrid = new HybridDesktop(AgentChannel.TryConnect());
+                return ((IScreenSource)hybrid, (IInputSink)hybrid);
+            });
             connection.IncomingSession += sessions.AcceptRelayed;
             RDM.Controller.Services.ConnectFlow.Broker = connection;
             activity.Write("RDM started");

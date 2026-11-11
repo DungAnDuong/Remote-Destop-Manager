@@ -18,6 +18,8 @@ using ClientAuthentication = rdmclient::RDM.Client.ClientAuthentication;
 using GdiScreenCapture = rdmclient::RDM.Client.GdiScreenCapture;
 using SendInputController = rdmclient::RDM.Client.SendInputController;
 using SessionManager = rdmclient::RDM.Client.SessionManager;
+using IScreenSource = rdmclient::RDM.Client.IScreenSource;
+using IInputSink = rdmclient::RDM.Client.IInputSink;
 
 namespace RDM.Tests;
 
@@ -82,7 +84,7 @@ public class RealDesktopTests
         var auth = new ClientAuthentication(temp.Store, state, 1000);
         auth.SetPassword(null, "Mat-Khau-Test-Thuc-1");
         auth.SetUnattended(true);
-        using var host = new SessionManager(state, auth, () => new GdiScreenCapture(), () => new SendInputController());
+        using var host = new SessionManager(state, auth, () => ((IScreenSource)new GdiScreenCapture(), (IInputSink)new SendInputController()));
         host.StartListening();
         using var hostKey = DeviceIdentity.FromSeed(state.IdentitySeed);
         using var controller = DeviceIdentity.Generate();

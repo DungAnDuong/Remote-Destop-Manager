@@ -311,8 +311,7 @@ public sealed class SessionManager : IDisposable
     private static readonly Logger Log = LogManager.GetCurrentClassLogger();
     private readonly ClientState _state;
     private readonly ClientAuthentication _auth;
-    private readonly Func<IScreenSource> _screenFactory;
-    private readonly Func<IInputSink> _inputFactory;
+    private readonly Func<(IScreenSource screen, IInputSink input)> _ioFactory;
     private readonly List<HostSession> _sessions = new List<HostSession>();
     private readonly object _gate = new object();
     private readonly CancellationTokenSource _shutdown = new CancellationTokenSource();
@@ -335,9 +334,9 @@ public sealed class SessionManager : IDisposable
 
     public int ListeningPort { get; private set; }
 
-    public SessionManager(ClientState state, ClientAuthentication auth, Func<IScreenSource> screenFactory, Func<IInputSink> inputFactory)
+    public SessionManager(ClientState state, ClientAuthentication auth, Func<(IScreenSource screen, IInputSink input)> ioFactory)
     {
-        _state = state; _auth = auth; _screenFactory = screenFactory; _inputFactory = inputFactory;
+        _state = state; _auth = auth; _ioFactory = ioFactory;
     }
 
     public IReadOnlyList<HostSession> Sessions { get { lock (_gate) return _sessions.ToList(); } }
@@ -466,7 +465,8 @@ public sealed class SessionManager : IDisposable
         }
         finally { Interlocked.Decrement(ref _pendingHandshakes); }
 
-        var session = new HostSession(result.Channel, result.Controller, _screenFactory(), _inputFactory(), _shutdown.Token);
+        var (screen, input) = _ioFactory();
+        var session = new HostSession(result.Channel, result.Controller, screen, input, _shutdown.Token);
         session.Ended += OnSessionEnded;
         lock (_gate) _sessions.Add(session);
         Activity?.Invoke($"Session started by {result.Controller.Username} via {remote}");

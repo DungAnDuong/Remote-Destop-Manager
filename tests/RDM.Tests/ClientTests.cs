@@ -315,7 +315,7 @@ public class ClientUiTests
                 using var connection = new rdmclient::RDM.Client.ConnectionManager(temp.Store, state, info);
                 state.SessionPort = 0;
                 var panel = new rdmclient::RDM.Client.AllowControlPanel(temp.Store, state, auth, connection, new ActivityLog(Path.Combine(temp.Dir, "a.log")), info,
-                    new rdmclient::RDM.Client.SessionManager(state, auth, () => null, () => null) { DiscoveryPort = 0 });
+                    new rdmclient::RDM.Client.SessionManager(state, auth, () => ((rdmclient::RDM.Client.IScreenSource)null, (rdmclient::RDM.Client.IInputSink)null)) { DiscoveryPort = 0 });
                 // Cỡ tối thiểu của cửa sổ chính, chia đôi: nút vẫn phải nằm trọn trong khung.
                 using var form = new System.Windows.Forms.Form { AutoScaleMode = System.Windows.Forms.AutoScaleMode.None, ClientSize = new System.Drawing.Size(RDM.Controller.Theming.Dpi.S(480), RDM.Controller.Theming.Dpi.S(650)) };
                 form.Controls.Add(panel);

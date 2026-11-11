@@ -32,10 +32,26 @@ public sealed class SendInputController : IInputSink
 
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT p);
+
+    [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
 
     private readonly HashSet<(int vk, int scan, bool ext)> _heldKeys = new HashSet<(int, int, bool)>();
     private readonly HashSet<MouseAction> _heldButtons = new HashSet<MouseAction>();
     private readonly object _gate = new object();
+
+    // Ưu tiên người dùng tại máy bị điều khiển: nếu con trỏ không còn ở nơi RDM vừa đặt thì người tại chỗ đã
+    // tự di chuột, nên tạm nhường quyền trong LocalPriority; sau khi họ ngừng thì điều khiển từ xa tự trở lại.
+    private const int LocalMoveTolerance = 3;           // sai số pixel do làm tròn tọa độ tuyệt đối
+    private static readonly long LocalPriorityTicks = TimeSpan.FromMilliseconds(600).Ticks;
+    // Hai vị trí RDM đặt gần nhất: con trỏ "đuổi theo" lệnh vừa gửi (khi controller rê nhanh) có thể còn ở vị trí
+    // trước đó, nên khớp với một trong hai thì KHÔNG coi là can thiệp cục bộ (tránh nhường nhầm gây giật).
+    private int _expX = int.MinValue, _expY, _prevX = int.MinValue, _prevY;
+    private long _yieldUntilTicks;
+
+    private static bool IsButtonUp(MouseAction a) => a == MouseAction.LeftUp || a == MouseAction.RightUp || a == MouseAction.MiddleUp;
+
+    private static bool Near(POINT c, int x, int y) => x != int.MinValue && Math.Abs(c.X - x) <= LocalMoveTolerance && Math.Abs(c.Y - y) <= LocalMoveTolerance;
 
     public void Mouse(MonitorInfo monitor, MouseInputData m)
     {
@@ -44,12 +60,25 @@ public sealed class SendInputController : IInputSink
             // Tọa độ chuẩn hóa theo monitor đang xem, đổi sang tọa độ của toàn bộ màn hình ảo cho SendInput.
             var px = monitor.X + (long)m.X * (monitor.Width - 1) / SessionInfo.NormalizedMax;
             var py = monitor.Y + (long)m.Y * (monitor.Height - 1) / SessionInfo.NormalizedMax;
+
+            // Người tại chỗ di chuột: con trỏ hiện tại lệch khỏi cả hai vị trí RDM vừa đặt => có can thiệp cục bộ.
+            var now = DateTime.UtcNow.Ticks;
+            if (_expX != int.MinValue && GetCursorPos(out var cur) && !Near(cur, _expX, _expY) && !Near(cur, _prevX, _prevY))
+            {
+                _yieldUntilTicks = now + LocalPriorityTicks;
+                // Nhận con trỏ hiện tại làm mốc mới: khi người tại chỗ ngừng, mốc ổn định và quyền từ xa tự trở lại.
+                _prevX = _expX; _prevY = _expY; _expX = cur.X; _expY = cur.Y;
+            }
+            // Đang nhường: bỏ qua di chuyển/cuộn/nhấn từ xa, nhưng luôn cho NHẢ nút để không kẹt chuột.
+            if (now < _yieldUntilTicks && !IsButtonUp(m.Action)) return;
+
             var vx = GetSystemMetrics(SM_XVIRTUALSCREEN); var vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
             var vw = Math.Max(2, GetSystemMetrics(SM_CXVIRTUALSCREEN)); var vh = Math.Max(2, GetSystemMetrics(SM_CYVIRTUALSCREEN));
             var input = new MOUSEINPUT
             {
                 Dx = (int)((px - vx) * 65535 / (vw - 1)), Dy = (int)((py - vy) * 65535 / (vh - 1)), Flags = MOVE | ABSOLUTE | VIRTUALDESK
             };
+            _prevX = _expX; _prevY = _expY; _expX = (int)px; _expY = (int)py;
             switch (m.Action)
             {
                 case MouseAction.LeftDown: input.Flags |= LEFTDOWN; _heldButtons.Add(MouseAction.LeftUp); break;

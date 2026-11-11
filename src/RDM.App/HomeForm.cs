@@ -39,7 +39,7 @@ public sealed class HomeForm : Form
     public HomeForm(RdmRuntime rt, AllowControlPanel allow, bool startHidden = false)
     {
         _rt = rt; _allow = allow; _startHidden = startHidden;
-        Text = "REMOTE DESKTOP MANAGER";
+        Text = "REMOTE DESKTOP MANAGER" + (IsElevated() ? " (Administrator)" : "");
         Icon = Theme.AppIcon;
         Font = Theme.Font();
         BackColor = Theme.Page;
@@ -257,6 +257,9 @@ public sealed class HomeForm : Form
         var settings = new ToolStripMenuItem("Settings", null, (s, e) => _allow.OpenSettings(this));
         var exit = new ToolStripMenuItem("Exit", null, (s, e) => { _exiting = true; Close(); });
         menu.Items.Add(settings);
+        // Điều khiển cửa sổ quyền cao (UAC, IIS Manager...) cần agent quyền Administrator (UIPI). Chỉ hiện khi chưa nâng quyền.
+        if (!IsElevated())
+            menu.Items.Add(new ToolStripMenuItem("Run as administrator", null, (s, e) => RunAsAdministrator()));
         menu.Items.Add(exit);
         MainMenuStrip = menu;
         return menu;

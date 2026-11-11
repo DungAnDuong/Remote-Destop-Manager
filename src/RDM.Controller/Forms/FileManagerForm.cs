@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using RDM.Controller.Services;
@@ -32,10 +33,9 @@ public sealed class FileManagerForm : Form
     private ClipItem _clip;
     private string _localDir = "";
     private string _remoteDir = "";
+    private readonly ShellIconCache _icons = new ShellIconCache(Dpi.S(16));
 
     private sealed class ClipItem { public bool Remote; public System.Collections.Generic.List<string> Paths; }
-
-    private const int ImgFile = 0, ImgFolder = 1, ImgDrive = 2;
 
     public FileManagerForm(RemoteSession session, string name)
     {
@@ -54,9 +54,8 @@ public sealed class FileManagerForm : Form
         _status.Padding = new Padding(Dpi.S(8), 0, 0, 0);
         _xfers.BackColor = Theme.SurfaceAlt;
 
-        var icons = BuildIcons();
-        _local.SmallImageList = icons;
-        _remote.SmallImageList = icons;
+        _local.SmallImageList = _icons.Images;
+        _remote.SmallImageList = _icons.Images;
 
         var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = Dpi.S(6) };
         split.Panel1.Controls.Add(BuildPane("This computer", _local, _localPath, "Upload →", Upload, out _));
@@ -75,7 +74,7 @@ public sealed class FileManagerForm : Form
         _local.KeyDown += (s, e) => OnListKey(false, e);
         _remote.KeyDown += (s, e) => OnListKey(true, e);
         _session.TransferChanged += OnTransfer;
-        FormClosed += (s, e) => _session.TransferChanged -= OnTransfer;
+        FormClosed += (s, e) => { _session.TransferChanged -= OnTransfer; _icons.Dispose(); };
         Shown += async (s, e) =>
         {
             // Nhớ lại đường dẫn phiên trước: local toàn cục, remote theo từng máy. Đường dẫn cũ không còn thì về gốc.
@@ -597,112 +596,129 @@ public sealed class FileManagerForm : Form
 
     private void SetStatus(string text) => _status.Text = text;
 
-    private static void AddRow(ListView list, string name, bool isDir, bool isDrive, long size, DateTime modified, string fullPath)
+    private void AddRow(ListView list, string name, bool isDir, bool isDrive, long size, DateTime modified, string fullPath)
     {
-        int img = isDrive ? ImgDrive : isDir ? ImgFolder : ImgFile;
+        var remote = ReferenceEquals(list, _remote);
+        // Local: lấy icon thật theo đường dẫn. Remote: lấy icon theo phần mở rộng/loại (không có file thật ở máy này).
+        var img = _icons.Index(remote ? name : (fullPath ?? name), isDir, isDrive, remote);
         var item = new ListViewItem(name) { Tag = new RowTag { IsDir = isDir, FullPath = fullPath }, ImageIndex = img };
         item.SubItems.Add(isDir ? "" : FormatSize(size));
         item.SubItems.Add(modified == DateTime.MinValue ? "" : modified.ToString("yyyy-MM-dd HH:mm"));
         list.Items.Add(item);
     }
 
-    // --- Icon vẽ sẵn cho folder / file / ổ đĩa (không phụ thuộc icon hệ thống) ---
-
-    private static ImageList BuildIcons()
-    {
-        int s = Dpi.S(16);
-        var il = new ImageList { ImageSize = new Size(s, s), ColorDepth = ColorDepth.Depth32Bit };
-        il.Images.Add(DrawFile(s));   // ImgFile
-        il.Images.Add(DrawFolder(s)); // ImgFolder
-        il.Images.Add(DrawDrive(s));  // ImgDrive
-        return il;
-    }
-
-    private static GraphicsPath Round(RectangleF r, float rad)
-    {
-        var p = new GraphicsPath();
-        float d = rad * 2;
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
-    }
-
-    private static Bitmap DrawFolder(int s)
-    {
-        float f = s / 16f;
-        var bmp = new Bitmap(s, s);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            using var brush = new SolidBrush(Color.FromArgb(255, 202, 92));
-            using var pen = new Pen(Color.FromArgb(214, 158, 46), Math.Max(1f, f));
-            using (var tab = Round(new RectangleF(1.5f * f, 3.2f * f, 6.5f * f, 4f * f), 1.2f * f))
-                g.FillPath(brush, tab);
-            using (var body = Round(new RectangleF(1.5f * f, 4.8f * f, 13f * f, 7.8f * f), 1.5f * f))
-            { g.FillPath(brush, body); g.DrawPath(pen, body); }
-        }
-        return bmp;
-    }
-
-    private static Bitmap DrawFile(int s)
-    {
-        float f = s / 16f;
-        var bmp = new Bitmap(s, s);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            var r = new RectangleF(3.5f * f, 1.5f * f, 9f * f, 13f * f);
-            float fold = 3.5f * f;
-            using (var path = new GraphicsPath())
-            {
-                path.AddLine(r.X, r.Y, r.Right - fold, r.Y);
-                path.AddLine(r.Right - fold, r.Y, r.Right, r.Y + fold);
-                path.AddLine(r.Right, r.Y + fold, r.Right, r.Bottom);
-                path.AddLine(r.Right, r.Bottom, r.X, r.Bottom);
-                path.CloseFigure();
-                using (var b = new SolidBrush(Color.White)) g.FillPath(b, path);
-                using (var pen = new Pen(Color.FromArgb(150, 160, 170), Math.Max(1f, f))) g.DrawPath(pen, path);
-            }
-            using (var tri = new GraphicsPath())
-            {
-                tri.AddLine(r.Right - fold, r.Y, r.Right - fold, r.Y + fold);
-                tri.AddLine(r.Right - fold, r.Y + fold, r.Right, r.Y + fold);
-                tri.CloseFigure();
-                using var b2 = new SolidBrush(Color.FromArgb(205, 215, 225));
-                g.FillPath(b2, tri);
-            }
-            using (var lp = new Pen(Color.FromArgb(180, 190, 200), Math.Max(1f, 0.8f * f)))
-            {
-                float lx = r.X + 1.6f * f, rx = r.Right - 1.6f * f;
-                for (int i = 0; i < 3; i++) { float y = r.Y + (6f + i * 2.2f) * f; g.DrawLine(lp, lx, y, rx, y); }
-            }
-        }
-        return bmp;
-    }
-
-    private static Bitmap DrawDrive(int s)
-    {
-        float f = s / 16f;
-        var bmp = new Bitmap(s, s);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            var r = new RectangleF(1.5f * f, 4.5f * f, 13f * f, 7f * f);
-            using (var path = Round(r, 1.2f * f))
-            {
-                using (var b = new SolidBrush(Color.FromArgb(120, 144, 156))) g.FillPath(b, path);
-                using (var pen = new Pen(Color.FromArgb(69, 90, 100), Math.Max(1f, f))) g.DrawPath(pen, path);
-            }
-            using var led = new SolidBrush(Color.FromArgb(129, 199, 132));
-            g.FillEllipse(led, r.Right - 3.4f * f, r.Y + r.Height / 2 - 0.9f * f, 1.8f * f, 1.8f * f);
-        }
-        return bmp;
-    }
-
     private sealed class RowTag { public bool IsDir; public string FullPath; }
+
+    /// <summary>
+    /// Kho icon hệ thống (giống Windows Explorer) cho ổ đĩa, thư mục và từng loại file.
+    /// Local lấy icon thật theo đường dẫn; remote lấy icon theo phần mở rộng (SHGFI_USEFILEATTRIBUTES).
+    /// Cache theo khoá (ổ đĩa / thư mục / ".ext") để không gọi shell lặp lại và ImageList không phình.
+    /// </summary>
+    private sealed class ShellIconCache : IDisposable
+    {
+        public ImageList Images { get; }
+        private readonly int _size;
+        private readonly Dictionary<string, int> _map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        private const uint SHGFI_ICON = 0x000000100, SHGFI_SMALLICON = 0x000000001, SHGFI_USEFILEATTRIBUTES = 0x000000010;
+        private const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010, FILE_ATTRIBUTE_NORMAL = 0x00000080;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct SHFILEINFO
+        {
+            public IntPtr hIcon; public int iIcon; public uint dwAttributes;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szDisplayName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string szTypeName;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SHGetFileInfo(string pszPath, uint dwFileAttributes, ref SHFILEINFO psfi, uint cbFileInfo, uint uFlags);
+        [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr hIcon);
+
+        public ShellIconCache(int size)
+        {
+            _size = size;
+            Images = new ImageList { ImageSize = new Size(size, size), ColorDepth = ColorDepth.Depth32Bit };
+            Images.Images.Add(GenericFile(size)); // chỉ số 0 = dự phòng nếu không lấy được icon hệ thống
+            _map["::fallback"] = 0;
+        }
+
+        public int Index(string nameOrPath, bool isDir, bool isDrive, bool remote)
+        {
+            string key;
+            if (isDrive) key = remote ? "::drive" : "drv:" + nameOrPath;
+            else if (isDir) key = "::dir";
+            else { var ext = Path.GetExtension(nameOrPath ?? string.Empty); key = string.IsNullOrEmpty(ext) ? "::file" : "ext:" + ext.ToLowerInvariant(); }
+
+            if (_map.TryGetValue(key, out var idx)) return idx;
+            int result = 0;
+            try
+            {
+                using var bmp = Fetch(nameOrPath, isDir, isDrive, remote);
+                if (bmp != null) { Images.Images.Add((Bitmap)bmp.Clone()); result = Images.Images.Count - 1; }
+            }
+            catch (Exception) { }
+            _map[key] = result;
+            return result;
+        }
+
+        private Bitmap Fetch(string nameOrPath, bool isDir, bool isDrive, bool remote)
+        {
+            uint flags = SHGFI_ICON | SHGFI_SMALLICON;
+            uint attr = 0;
+            string path;
+            if (isDrive)
+            {
+                // Ổ đĩa: local dùng icon thật của ổ; remote dùng icon ổ của hệ thống (lấy từ ổ hệ điều hành).
+                path = !remote && nameOrPath != null && Directory.Exists(nameOrPath) ? nameOrPath : SystemDrive();
+            }
+            else if (!remote && nameOrPath != null && (File.Exists(nameOrPath) || Directory.Exists(nameOrPath)))
+            {
+                path = nameOrPath; // icon thật của file/thư mục đang có
+            }
+            else
+            {
+                flags |= SHGFI_USEFILEATTRIBUTES; // không cần file thật: lấy icon theo loại
+                if (isDir) { attr = FILE_ATTRIBUTE_DIRECTORY; path = "folder"; }
+                else { var ext = Path.GetExtension(nameOrPath ?? string.Empty); attr = FILE_ATTRIBUTE_NORMAL; path = string.IsNullOrEmpty(ext) ? "file" : "file" + ext; }
+            }
+
+            var sfi = new SHFILEINFO();
+            var res = SHGetFileInfo(path, attr, ref sfi, (uint)Marshal.SizeOf(typeof(SHFILEINFO)), flags);
+            if (res == IntPtr.Zero || sfi.hIcon == IntPtr.Zero) return null;
+            try
+            {
+                using var ico = Icon.FromHandle(sfi.hIcon);
+                using var src = ico.ToBitmap();
+                var bmp = new Bitmap(_size, _size);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(src, new Rectangle(0, 0, _size, _size));
+                }
+                return bmp;
+            }
+            finally { DestroyIcon(sfi.hIcon); }
+        }
+
+        private static string SystemDrive() => Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.System)) ?? "C:\\";
+
+        private static Bitmap GenericFile(int s)
+        {
+            var bmp = new Bitmap(s, s);
+            using var g = Graphics.FromImage(bmp);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            float f = s / 16f;
+            var r = new RectangleF(3.5f * f, 1.5f * f, 9f * f, 13f * f);
+            using var b = new SolidBrush(Color.White);
+            using var pen = new Pen(Color.FromArgb(150, 160, 170), Math.Max(1f, f));
+            g.FillRectangle(b, r);
+            g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
+            return bmp;
+        }
+
+        public void Dispose() => Images.Dispose();
+    }
 
     private static long SafeSize(FileInfo f) { try { return f.Length; } catch (IOException) { return 0; } }
     private static DateTime SafeTime(FileSystemInfo i) { try { return i.LastWriteTime; } catch (IOException) { return DateTime.MinValue; } catch (UnauthorizedAccessException) { return DateTime.MinValue; } }

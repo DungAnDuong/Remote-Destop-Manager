@@ -122,7 +122,7 @@ public sealed class SessionTransfers
             using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 var buffer = new byte[ChunkSize];
-                long sent = 0;
+                long sent = 0, lastShown = 0;
                 int n;
                 while ((n = await fs.ReadAsync(buffer, 0, buffer.Length, cancel.Token).ConfigureAwait(false)) > 0)
                 {
@@ -136,8 +136,13 @@ public sealed class SessionTransfers
                     var count = n;
                     await _send(SessionMessage.FileChunk, Wire.Build(w => { w.Write(id); w.Write(count); w.Write(buffer, 0, count); }), cancel.Token).ConfigureAwait(false);
                     sent += n;
-                    // Tiến độ của bên gửi do bên nhận báo về (FileProgress), không dùng số byte đã gửi,
-                    // để phần trăm hai máy khớp nhau.
+                    // Hiển thị tiến độ theo số byte ĐÃ GỬI (cập nhật mỗi ~256KB) để file lớn không đứng ở 0%
+                    // khi ack của bên nhận về trễ. Bên nhận vẫn hiển thị theo byte đã ghi; hai bên lệch tối đa một nhịp mạng.
+                    if (sent - lastShown >= AckEvery || sent == info.Length)
+                    {
+                        lastShown = sent;
+                        if (progress.TransferredBytes < sent) { progress.TransferredBytes = sent; TransferChanged?.Invoke(progress); }
+                    }
                 }
             }
             await _send(SessionMessage.FileEnd, Wire.Build(w => w.Write(id)), cancel.Token).ConfigureAwait(false);

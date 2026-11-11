@@ -97,20 +97,32 @@ public sealed class ChatPanel : UserControl
         _list.Padding = new Padding(Dpi.S(8));
         _list.ClientSizeChanged += (s, e) => Reflow();
 
-        _input.Font = Theme.Font(10f);
+        _input.Font = Theme.Font(10.5f);
+        _input.BorderStyle = BorderStyle.None;
         _input.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Enter(); } };
 
-        var send = new Button { Text = "Send", Dock = DockStyle.Right, Width = Dpi.S(64), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White };
-        send.FlatAppearance.BorderSize = 0;
+        // Hàng nhập kiểu Zalo: đính kèm + mặt cười bên trái, Like + Send (máy bay) bên phải, ô chữ ở giữa.
+        var attach = IconButton(DrawAttach(Dpi.S(22)));
+        attach.Dock = DockStyle.Left;
+        attach.Click += (s, e) => SendFileRequested?.Invoke();
+        var emoji = IconButton(DrawSmiley(Dpi.S(22)));
+        emoji.Dock = DockStyle.Left;
+        emoji.Click += (s, e) => ShowEmojiPicker(emoji);
+        var send = IconButton(DrawSend(Dpi.S(22)));
+        send.Dock = DockStyle.Right;
         send.Click += (s, e) => Enter();
-        var file = new Button { Dock = DockStyle.Right, Width = Dpi.S(40), Text = "\U0001F4CE", FlatStyle = FlatStyle.Flat, BackColor = Theme.SurfaceAlt, ForeColor = Theme.Text, Font = Theme.Font(11f) };
-        file.FlatAppearance.BorderColor = Theme.Border;
-        file.Click += (s, e) => SendFileRequested?.Invoke();
+        var like = IconButton(DrawLike(Dpi.S(22)));
+        like.Dock = DockStyle.Right;
+        like.Click += (s, e) => ChatEntered?.Invoke("\U0001F44D");
 
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = Dpi.S(40), BackColor = Theme.Surface, Padding = new Padding(Dpi.S(6)) };
-        bottom.Controls.Add(_input);
+        var wrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Padding = new Padding(Dpi.S(4), Dpi.S(12), Dpi.S(4), 0) };
+        wrap.Controls.Add(_input);
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = Dpi.S(48), BackColor = Theme.Surface, Padding = new Padding(Dpi.S(4), Dpi.S(3), Dpi.S(4), Dpi.S(3)) };
         bottom.Controls.Add(send);
-        bottom.Controls.Add(file);
+        bottom.Controls.Add(like);
+        bottom.Controls.Add(attach);
+        bottom.Controls.Add(emoji);
+        bottom.Controls.Add(wrap);
 
         Controls.Add(_list);
         Controls.Add(bottom);
@@ -126,6 +138,99 @@ public sealed class ChatPanel : UserControl
     }
 
     public void FocusInput() => _input.Focus();
+
+    private static Button IconButton(Image img)
+    {
+        var b = new Button { Width = Dpi.S(40), FlatStyle = FlatStyle.Flat, BackColor = Theme.Surface, Image = img, ImageAlign = ContentAlignment.MiddleCenter, TabStop = false };
+        b.FlatAppearance.BorderSize = 0;
+        b.FlatAppearance.MouseOverBackColor = Theme.SurfaceAlt;
+        b.FlatAppearance.MouseDownBackColor = Theme.SurfaceAlt;
+        return b;
+    }
+
+    private void ShowEmojiPicker(Control anchor)
+    {
+        var menu = new ContextMenuStrip { Font = new Font("Segoe UI Emoji", 13f), ShowImageMargin = false };
+        foreach (var em in new[] { "\U0001F600", "\U0001F601", "\U0001F602", "\U0001F60D", "\U0001F60E", "\U0001F44D", "❤️", "\U0001F64F", "\U0001F622", "\U0001F62E", "\U0001F389", "✅" })
+        {
+            var item = new ToolStripMenuItem(em);
+            var value = em;
+            item.Click += (s, e) => InsertEmoji(value);
+            menu.Items.Add(item);
+        }
+        menu.Show(anchor, new Point(0, -menu.Height));
+    }
+
+    private void InsertEmoji(string em)
+    {
+        var pos = Math.Max(0, Math.Min(_input.Text.Length, _input.SelectionStart));
+        _input.Text = _input.Text.Insert(pos, em);
+        _input.SelectionStart = pos + em.Length;
+        _input.Focus();
+    }
+
+    // --- Icon vẽ phẳng kiểu Zalo cho hàng nhập ---
+
+    private static Image DrawSend(int s)
+    {
+        var bmp = new Bitmap(s, s);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        float f = s / 22f;
+        using var b = new SolidBrush(Theme.Accent);
+        using var path = new GraphicsPath();
+        path.AddPolygon(new[] { new PointF(3 * f, 4 * f), new PointF(19 * f, 11 * f), new PointF(3 * f, 18 * f), new PointF(7 * f, 11 * f) });
+        g.FillPath(b, path);
+        return bmp;
+    }
+
+    private static Image DrawAttach(int s)
+    {
+        var bmp = new Bitmap(s, s);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        float f = s / 22f;
+        using var pen = new Pen(Theme.TextSecondary, Math.Max(1.4f, 1.7f * f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawArc(pen, 6.5f * f, 3.5f * f, 9f * f, 8f * f, 180, 180);
+        g.DrawLine(pen, 6.5f * f, 7.5f * f, 6.5f * f, 15f * f);
+        g.DrawLine(pen, 15.5f * f, 7.5f * f, 15.5f * f, 14f * f);
+        g.DrawArc(pen, 6.5f * f, 11f * f, 9f * f, 7f * f, 0, 180);
+        g.DrawLine(pen, 10f * f, 6.5f * f, 10f * f, 14.5f * f);
+        return bmp;
+    }
+
+    private static Image DrawSmiley(int s)
+    {
+        var bmp = new Bitmap(s, s);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        float f = s / 22f;
+        using var pen = new Pen(Theme.TextSecondary, Math.Max(1.4f, 1.6f * f));
+        using var eye = new SolidBrush(Theme.TextSecondary);
+        g.DrawEllipse(pen, 2.5f * f, 2.5f * f, 17f * f, 17f * f);
+        g.FillEllipse(eye, 7f * f, 8f * f, 2f * f, 2f * f);
+        g.FillEllipse(eye, 13f * f, 8f * f, 2f * f, 2f * f);
+        g.DrawArc(pen, 6.5f * f, 8.5f * f, 9f * f, 7.5f * f, 20, 140);
+        return bmp;
+    }
+
+    private static Image DrawLike(int s)
+    {
+        var bmp = new Bitmap(s, s);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        float f = s / 22f;
+        using var b = new SolidBrush(Theme.Accent);
+        // Nắm tay + ngón cái (thumbs up) đơn giản, phẳng.
+        using (var palm = RoundRect(new Rectangle((int)(8 * f), (int)(9 * f), (int)(9 * f), (int)(9 * f)), (int)(2f * f))) g.FillPath(b, palm);
+        using (var cuff = RoundRect(new Rectangle((int)(3.5f * f), (int)(10 * f), (int)(3.5f * f), (int)(8 * f)), (int)(1.2f * f))) g.FillPath(b, cuff);
+        using (var thumb = new GraphicsPath())
+        {
+            thumb.AddEllipse(8.5f * f, 3.5f * f, 5.5f * f, 7f * f);
+            g.FillPath(b, thumb);
+        }
+        return bmp;
+    }
 
     public void AddOutgoing(string text) => AddBubble(text, true);
     public void AddIncoming(string text) => AddBubble(text, false);

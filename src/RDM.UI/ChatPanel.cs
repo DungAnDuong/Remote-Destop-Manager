@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using RDM.Controller.Theming;
 using RDM.Shared.Network;
@@ -139,7 +141,8 @@ public sealed class ChatPanel : UserControl
     private void AddBubble(string text, bool mine)
     {
         if (InvokeRequired) { BeginInvoke(new Action(() => AddBubble(text, mine))); return; }
-        var bubble = new Bubble((mine ? "You" : PeerName) + ":  " + text, mine);
+        // Kiểu Zalo: không ghi tên trong bong bóng; bên phải là của mình, bên trái là của người kia.
+        var bubble = new Bubble(text, mine);
         _list.Controls.Add(bubble);
         PlaceBubble(bubble);
         _list.ScrollControlIntoView(bubble);
@@ -160,22 +163,29 @@ public sealed class ChatPanel : UserControl
         foreach (Control c in _list.Controls)
         {
             if (c is Bubble b) PlaceBubble(b);
-            else if (c is FileEntry f) f.Width = Math.Max(Dpi.S(160), _list.ClientSize.Width - Dpi.S(28));
+            else if (c is FileEntry f) PlaceFileEntry(f);
         }
     }
 
-    /// <summary>Hiển thị một lượt truyền file ngay trong dòng chat: icon file, tên và thanh phần trăm.</summary>
+    // Thẻ file canh như bong bóng: của mình sát phải, của người kia sát trái.
+    private void PlaceFileEntry(FileEntry f)
+    {
+        f.Width = Math.Min(Dpi.S(300), MaxBubbleWidth());
+        var left = f.Mine ? Math.Max(Dpi.S(8), _list.ClientSize.Width - f.Width - Dpi.S(20)) : Dpi.S(4);
+        f.Margin = new Padding(left, Dpi.S(3), 0, Dpi.S(3));
+    }
+
+    /// <summary>Hiển thị một lượt truyền file ngay trong dòng chat: icon theo loại file, tên, kích thước và tiến trình.</summary>
     public void UpdateTransfer(FileTransferProgress p)
     {
         if (InvokeRequired) { BeginInvoke(new Action(() => UpdateTransfer(p))); return; }
         if (!_fileEntries.TryGetValue(p.Id, out var entry))
         {
             entry = new FileEntry(p.Id, p.Incoming, PeerName,
-                id => PauseRequested?.Invoke(id), id => ResumeRequested?.Invoke(id), id => CancelRequested?.Invoke(id))
-            { Width = Math.Max(Dpi.S(160), _list.ClientSize.Width - Dpi.S(28)) };
-            entry.Margin = new Padding(Dpi.S(4), Dpi.S(3), 0, Dpi.S(3));
+                id => PauseRequested?.Invoke(id), id => ResumeRequested?.Invoke(id), id => CancelRequested?.Invoke(id));
             _fileEntries[p.Id] = entry;
             _list.Controls.Add(entry);
+            PlaceFileEntry(entry);
         }
         entry.Update(p);
         _list.ScrollControlIntoView(entry);
@@ -213,80 +223,168 @@ public sealed class ChatPanel : UserControl
         return bmp;
     }
 
-    /// <summary>Thẻ một file trong dòng chat: icon, tên + trạng thái, thanh phần trăm và nút Pause/Cancel.</summary>
-    private sealed class FileEntry : Panel
+    // --- Icon hệ thống theo loại file (giống Windows/Zalo), cache theo phần mở rộng ---
+    private static readonly Dictionary<string, Image> IconCache = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct SHFILEINFO
+    {
+        public IntPtr hIcon; public int iIcon; public uint dwAttributes;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szDisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string szTypeName;
+    }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SHGetFileInfo(string pszPath, uint dwFileAttributes, ref SHFILEINFO psfi, uint cbFileInfo, uint uFlags);
+    [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr hIcon);
+
+    private static Image FileIconFor(string fileName, int target)
+    {
+        var ext = Path.GetExtension(fileName ?? string.Empty);
+        var key = (string.IsNullOrEmpty(ext) ? "::file" : ext.ToLowerInvariant()) + "@" + target;
+        if (IconCache.TryGetValue(key, out var img)) return img;
+        img = FetchShellIcon(string.IsNullOrEmpty(ext) ? "file" : "file" + ext, target) ?? FileGlyph;
+        IconCache[key] = img;
+        return img;
+    }
+
+    private static Image FetchShellIcon(string pseudoName, int target)
+    {
+        const uint SHGFI_ICON = 0x100, SHGFI_LARGEICON = 0x0, SHGFI_USEFILEATTRIBUTES = 0x10, FILE_ATTRIBUTE_NORMAL = 0x80;
+        var sfi = new SHFILEINFO();
+        var res = SHGetFileInfo(pseudoName, FILE_ATTRIBUTE_NORMAL, ref sfi, (uint)Marshal.SizeOf(typeof(SHFILEINFO)), SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES);
+        if (res == IntPtr.Zero || sfi.hIcon == IntPtr.Zero) return null;
+        try
+        {
+            using var ico = Icon.FromHandle(sfi.hIcon);
+            using var src = ico.ToBitmap();
+            var bmp = new Bitmap(target, target);
+            using (var g = Graphics.FromImage(bmp)) { g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(src, new Rectangle(0, 0, target, target)); }
+            return bmp;
+        }
+        catch (Exception) { return null; }
+        finally { DestroyIcon(sfi.hIcon); }
+    }
+
+    private static GraphicsPath RoundRect(Rectangle r, int radius)
+    {
+        var p = new GraphicsPath();
+        int d = radius * 2;
+        p.AddArc(r.X, r.Y, d, d, 180, 90);
+        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+
+    private static Color Blend(Color a, Color b, float t) =>
+        Color.FromArgb(
+            (int)(a.R * t + b.R * (1 - t)),
+            (int)(a.G * t + b.G * (1 - t)),
+            (int)(a.B * t + b.B * (1 - t)));
+
+    /// <summary>Thẻ file kiểu Zalo: icon theo loại, tên, kích thước + trạng thái và thanh tiến trình; hủy/tạm ngưng khi đang truyền.</summary>
+    private sealed class FileEntry : Control
     {
         private readonly int _id;
         private readonly bool _incoming;
-        private readonly string _peer;
-        private readonly Label _text;
-        private readonly ProgressBar _bar;
+        private readonly Action<int> _onPause, _onResume, _onCancel;
         private readonly Button _pause, _cancel;
-        private readonly Action<int> _onResume, _onPause;
-        private bool _paused;
-        private bool _done;
+        private Image _icon;
+        private string _name = "";
+        private string _status = "";
+        private float _progress;
+        private bool _done, _paused, _active;
+
+        public bool Mine => !_incoming;
 
         public FileEntry(int id, bool incoming, string peer, Action<int> onPause, Action<int> onResume, Action<int> onCancel)
         {
-            _id = id;
-            _incoming = incoming;
-            _peer = peer;
-            _onPause = onPause;
-            _onResume = onResume;
-            Height = Dpi.S(56);
-            BackColor = Theme.SurfaceAlt;
-            Padding = new Padding(Dpi.S(6));
-            var icon = new PictureBox { Dock = DockStyle.Left, Width = Dpi.S(30), Image = FileGlyph, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Color.Transparent };
+            _id = id; _incoming = incoming; _onPause = onPause; _onResume = onResume; _onCancel = onCancel;
+            Height = Dpi.S(64);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Surface;
 
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Right, Width = Dpi.S(78), FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Color.Transparent };
-            _pause = SmallButton("❚❚"); // tạm ngưng
-            _pause.Visible = !incoming; // chỉ tạm ngưng được lượt gửi đi
+            _pause = IconButton("❚❚");
             _pause.Click += (s, e) =>
             {
                 if (_done) return;
                 if (_paused) { _paused = false; _onResume?.Invoke(_id); _pause.Text = "❚❚"; }
                 else { _paused = true; _onPause?.Invoke(_id); _pause.Text = "▶"; }
             };
-            _cancel = SmallButton("✕"); // hủy
-            _cancel.Click += (s, e) => { if (!_done) onCancel?.Invoke(_id); };
-            actions.Controls.Add(_pause);
-            actions.Controls.Add(_cancel);
-
-            _bar = new ProgressBar { Dock = DockStyle.Bottom, Height = Dpi.S(6), Maximum = 1000, Style = ProgressBarStyle.Continuous };
-            _text = new Label { Dock = DockStyle.Fill, UseMnemonic = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Text, Font = Theme.Font(9f) };
-            Controls.Add(_text);
-            Controls.Add(actions);
-            Controls.Add(_bar);
-            Controls.Add(icon);
-            _bar.SendToBack();
-            _text.BringToFront();
+            _cancel = IconButton("✕");
+            _cancel.Click += (s, e) => { if (!_done) _onCancel?.Invoke(_id); };
+            Controls.Add(_pause);
+            Controls.Add(_cancel);
+            Resize += (s, e) => LayoutButtons();
         }
 
-        private static Button SmallButton(string text)
+        private static Button IconButton(string text)
         {
-            var b = new Button { Width = Dpi.S(34), Height = Dpi.S(26), Text = text, FlatStyle = FlatStyle.Flat, Font = Theme.Font(9f), BackColor = Theme.Surface, ForeColor = Theme.Text, Margin = new Padding(Dpi.S(2), Dpi.S(4), 0, 0) };
+            var b = new Button { Text = text, FlatStyle = FlatStyle.Flat, Font = Theme.Font(8.5f), BackColor = Theme.Surface, ForeColor = Theme.TextSecondary, Visible = false, TabStop = false };
             b.FlatAppearance.BorderColor = Theme.Border;
             return b;
         }
 
+        private void LayoutButtons()
+        {
+            int bw = Dpi.S(26), bh = Dpi.S(24), pad = Dpi.S(8), gap = Dpi.S(4), y = (Height - bh) / 2;
+            _cancel.SetBounds(Width - pad - bw, y, bw, bh);
+            _pause.SetBounds(Width - pad - bw * 2 - gap, y, bw, bh);
+        }
+
         public void Update(FileTransferProgress p)
         {
-            int permille = p.TotalBytes > 0 ? (int)Math.Min(1000, Math.Max(0, p.TransferredBytes * 1000 / p.TotalBytes)) : 0;
-            if (p.Status == TransferStatus.Completed) permille = 1000;
-            _bar.Value = Math.Min(_bar.Maximum, permille);
-            int pct = p.TotalBytes > 0 ? (int)Math.Min(100, p.TransferredBytes * 100 / p.TotalBytes) : (p.Status == TransferStatus.Completed ? 100 : 0);
-            string verb = _incoming ? "From " + _peer : "To " + _peer;
-            string state;
+            if (_icon == null) { _name = p.FileName; _icon = FileIconFor(p.FileName, Dpi.S(34)); }
+            _progress = p.TotalBytes > 0 ? Math.Min(1f, Math.Max(0f, (float)p.TransferredBytes / p.TotalBytes)) : (p.Status == TransferStatus.Completed ? 1f : 0f);
+            int pct = (int)Math.Round(_progress * 100);
+            string sent = FormatSize(p.TransferredBytes), total = FormatSize(p.TotalBytes);
             switch (p.Status)
             {
-                case TransferStatus.Completed: state = _incoming ? "Received" : "Sent"; _done = true; break;
-                case TransferStatus.Failed: state = "Failed"; _done = true; break;
-                case TransferStatus.Canceled: state = "Canceled"; _done = true; break;
-                case TransferStatus.Paused: state = "Paused"; break;
-                default: state = pct + "%"; break;
+                case TransferStatus.Completed: _status = (_incoming ? "Received" : "Sent") + "  ✓  " + total; _done = true; _active = false; _progress = 1f; break;
+                case TransferStatus.Failed: _status = "Failed  -  " + total; _done = true; _active = false; break;
+                case TransferStatus.Canceled: _status = "Canceled"; _done = true; _active = false; break;
+                case TransferStatus.Paused: _status = $"Paused  {pct}%  ({sent} / {total})"; _active = true; break;
+                default: _status = $"{pct}%  ({sent} / {total})"; _active = true; break;
             }
-            if (_done) { _bar.Visible = false; _pause.Visible = false; _cancel.Visible = false; }
-            _text.Text = $"{p.FileName}\n{verb}  -  {state}  ({FormatSize(p.TransferredBytes)} / {FormatSize(p.TotalBytes)})";
+            _pause.Visible = _active && !_incoming;
+            _cancel.Visible = _active;
+            LayoutButtons();
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var r = new Rectangle(0, 0, Width - 1, Height - 1);
+            using (var path = RoundRect(r, Dpi.S(12)))
+            using (var b = new SolidBrush(Mine ? Blend(Theme.Accent, Theme.Surface, 0.16f) : Theme.SurfaceAlt))
+                g.FillPath(b, path);
+
+            int iconSize = Dpi.S(34), pad = Dpi.S(10);
+            if (_icon != null) g.DrawImage(_icon, new Rectangle(pad, (Height - iconSize) / 2, iconSize, iconSize));
+
+            int textLeft = pad + iconSize + Dpi.S(8);
+            int rightPad = _active ? Dpi.S(72) : Dpi.S(10);
+            var nameRect = new Rectangle(textLeft, Dpi.S(9), Math.Max(Dpi.S(20), Width - textLeft - rightPad), Dpi.S(18));
+            TextRenderer.DrawText(g, _name, Theme.Font(9.5f, true), nameRect, Theme.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
+            var statRect = new Rectangle(textLeft, Dpi.S(28), Math.Max(Dpi.S(20), Width - textLeft - rightPad), Dpi.S(16));
+            TextRenderer.DrawText(g, _status, Theme.Font(8.5f), statRect, Theme.TextMuted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
+
+            if (!_done)
+            {
+                int bh = Dpi.S(4), by = Height - Dpi.S(12), bx = textLeft, bw = Math.Max(Dpi.S(20), Width - textLeft - Dpi.S(10));
+                using (var track = new SolidBrush(Blend(Theme.TextMuted, Theme.SurfaceAlt, 0.45f)))
+                using (var tp = RoundRect(new Rectangle(bx, by, bw, bh), bh)) g.FillPath(track, tp);
+                int fw = (int)(bw * _progress);
+                if (fw > bh)
+                {
+                    using var fill = new SolidBrush(Theme.Accent);
+                    using var fp = RoundRect(new Rectangle(bx, by, fw, bh), bh);
+                    g.FillPath(fill, fp);
+                }
+            }
         }
 
         private static string FormatSize(long bytes)

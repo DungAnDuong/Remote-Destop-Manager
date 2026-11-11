@@ -9,7 +9,7 @@
     <PlatformTarget>$(Platform)</PlatformTarget>
     <Company>RDM</Company>
     <Product>Remote Desktop Manager</Product>
-    <Version>0.8.17</Version>
+    <Version>0.8.18</Version>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <NuGetAudit>true</NuGetAudit>

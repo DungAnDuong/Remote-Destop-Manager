@@ -61,7 +61,7 @@ public sealed class RdmHostService : ServiceBase
                     if (!File.Exists(agentPath)) { Log("Agent not found: " + agentPath); }
                     else
                     {
-                        var pid = SessionLauncher.LaunchAsSystemInActiveSession(agentPath, $"--probe-loop \"{ProbeLog}\" 2");
+                        var pid = SessionLauncher.LaunchAsSystemInActiveSession(agentPath, "--serve");
                         agentSession = session;
                         agent = pid != 0 ? SafeGetProcess(pid) : null;
                         Log($"Launched agent pid={pid} in session {session}");

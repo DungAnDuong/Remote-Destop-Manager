@@ -37,18 +37,32 @@ public static class DesktopCapture
     /// <summary>Chụp toàn bộ màn hình ảo của input desktop hiện tại. Ném Win32Exception nếu không đủ quyền.</summary>
     public static Bitmap CaptureInputDesktop(out string desktopName)
     {
+        string name = null;
+        Bitmap bmp = null;
+        RunOnInputDesktop(n => { name = n; bmp = CaptureVirtualScreen(); });
+        desktopName = name;
+        return bmp;
+    }
+
+    /// <summary>
+    /// Gắn luồng hiện tại vào input desktop đang hoạt động (kể cả Winlogon/secure desktop khi chạy SYSTEM),
+    /// chạy action rồi trả luồng về desktop cũ. Phải gọi trên luồng CHƯA tạo cửa sổ nào (yêu cầu của SetThreadDesktop).
+    /// Dùng cho cả chụp màn hình và tiêm chuột/phím vào đúng desktop đang nhập.
+    /// </summary>
+    public static void RunOnInputDesktop(Action<string> action)
+    {
         var hDesk = OpenInputDesktop(0, true, MAXIMUM_ALLOWED);
         if (hDesk == IntPtr.Zero) hDesk = OpenDesktop("Default", 0, true, MAXIMUM_ALLOWED);
         if (hDesk == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenInputDesktop failed");
-        desktopName = DesktopName(hDesk);
+        var name = DesktopName(hDesk);
         var previous = GetThreadDesktop(GetCurrentThreadId());
         var switched = false;
         try
         {
             if (!SetThreadDesktop(hDesk))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "SetThreadDesktop failed (capturing the secure desktop requires running as SYSTEM)");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "SetThreadDesktop failed (the secure desktop requires running as SYSTEM)");
             switched = true;
-            return CaptureVirtualScreen();
+            action(name);
         }
         finally
         {

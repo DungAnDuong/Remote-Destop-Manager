@@ -21,33 +21,35 @@ Copy-Item (Join-Path $root 'src\RDM.DesktopAgent\bin\x64\Release\RDM.DesktopAgen
 Copy-Item (Join-Path $root 'src\RDM.HostService\bin\x64\Release\RDM.HostService.exe') $out
 
 $readme = @'
-RDM - Thu nghiem ho tro UAC / man hinh khoa (Buoc 1-2)
+RDM - Thu nghiem ho tro UAC / man hinh khoa (agent SYSTEM + named pipe)
 
-Muc tieu: chung minh agent chay quyen SYSTEM chup duoc secure desktop (UAC, man hinh khoa).
+Muc tieu: xac minh (A) agent chay quyen SYSTEM chup duoc secure desktop (UAC, man hinh khoa),
+va (B) khung hinh + input di qua duoc named pipe giua agent (SYSTEM) va tien trinh nguoi dung.
 Lam tren MAY BI DIEU KHIEN, mo PowerShell quyen Administrator trong thu muc nay.
 
-1) Cai dich vu (tu khoi dong cung Windows, chay quyen SYSTEM):
+1) Cai dich vu (tu khoi dong cung Windows, chay quyen SYSTEM). Dich vu se chay agent o che do --serve:
      .\RDM.HostService.exe --install
      sc start RDMHostAgent
 
-2) Kiem chung chup secure desktop:
-   - Mo mot cua so UAC (vi du: chuot phai mot app -> Run as administrator) va GIU nguyen man hinh UAC vai giay.
-   - Hoac khoa may (Win+L) vai giay.
-   - Mo file log: %ProgramData%\RDM\desktop-probe.log
-     Dong co "desktop=Winlogon  result=OK  WxH" nghia la agent (quyen SYSTEM) DA chup duoc secure desktop. Dat yeu cau.
-     Neu thay "result=FAILED" tren desktop Winlogon thi agent chua chay dung quyen SYSTEM.
-   - File %ProgramData%\RDM\host-service.log ghi lai viec dich vu khoi chay agent.
+2) (B) Kiem chung DUONG TRUYEN pipe (an toan, KHONG chup anh) - chay quyen NGUOI DUNG thuong:
+     .\RDM.DesktopAgent.exe --ping
+   In ra "connected  input-desktop=Default" nghia la tien trinh nguoi dung ket noi duoc toi agent SYSTEM qua pipe.
 
-3) Go dich vu sau khi test:
+3) (A) Kiem chung CHUP secure desktop - agent tu ghi log tu ben trong (khong can client luc UAC):
+     psexec -s -d .\RDM.DesktopAgent.exe --probe-loop "%ProgramData%\RDM\desktop-probe.log" 1
+   Roi mo mot cua so UAC (chuot phai 1 app -> Run as administrator) GIU vai giay, hoac khoa may (Win+L) vai giay.
+   Mo log: %ProgramData%\RDM\desktop-probe.log
+     Dong "desktop=Winlogon  result=OK  WxH" => agent (SYSTEM) DA chup duoc secure desktop. Dat yeu cau.
+     "result=FAILED" tren Winlogon => agent chua chay dung quyen SYSTEM.
+   (Dung ban probe nay sau khi xong: dong cua so, hoac Stop-Process ten RDM.DesktopAgent cua phien probe.)
+
+4) Go dich vu sau khi test:
      sc stop RDMHostAgent
      .\RDM.HostService.exe --uninstall
 
-Kiem tra nhanh khong can dich vu (tuy chon): chay agent truc tiep quyen SYSTEM bang PsExec:
-     psexec -s -d .\RDM.DesktopAgent.exe --selftest C:\Temp\secure.png
-   roi mo UAC; anh C:\Temp\secure.png se la man hinh UAC neu chup duoc.
-
-Luu y: day moi la Buoc 1-2 (chung minh chup duoc). Buoc tiep theo se dua khung hinh secure desktop
-vao phien dieu khien va cho phep bam chuot/go phim len man hinh UAC.
+Trang thai: agent da phuc vu khung hinh (PNG) + nhan chuot/phim qua pipe (--serve), va client test --ping/--pullframe.
+Buoc KE TIEP sau khi ban xac nhan (A) va (B) dat: ghep vao RDM.exe de khi may bi dieu khien dang o secure desktop
+thi tu lay khung tu agent va chuyen chuot/phim len man hinh UAC; va them tuy chon cai dich vu trong bo cai.
 '@
 Set-Content -Path (Join-Path $out 'README-UAC-test.txt') -Value $readme -Encoding utf8
 

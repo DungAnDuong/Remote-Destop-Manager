@@ -19,6 +19,25 @@ internal static class Program
             Console.WriteLine(DesktopCapture.InputDesktopName() ?? "(unknown)");
             return 0;
         }
+        if (args.Length >= 1 && args[0] == "--serve")
+        {
+            // Máy chủ named pipe: phục vụ khung hình + nhận input. Dịch vụ SYSTEM khởi chạy ở chế độ này trong phiên người dùng.
+            var pipe = args.Length >= 2 ? args[1] : AgentServer.DefaultPipe;
+            return AgentServer.Serve(pipe);
+        }
+        if (args.Length >= 2 && args[0] == "--pullframe")
+        {
+            // Client test (chạy quyền người dùng): lấy một khung từ agent qua pipe và lưu PNG, để kiểm chứng đường truyền.
+            var outPng = args[1];
+            var pipe = args.Length >= 3 ? args[2] : AgentServer.DefaultPipe;
+            return AgentServer.PullFrame(pipe, outPng);
+        }
+        if (args.Length >= 1 && args[0] == "--ping")
+        {
+            // Client test an toàn: chỉ hỏi tên input desktop qua pipe (không chụp, không lưu ảnh).
+            var pipe = args.Length >= 2 ? args[1] : AgentServer.DefaultPipe;
+            return AgentServer.Ping(pipe);
+        }
         if (args.Length >= 2 && args[0] == "--probe-loop")
         {
             // Lặp chụp input desktop và ghi log (KHÔNG lưu ảnh), để kiểm chứng chụp được secure desktop khi chạy SYSTEM.
@@ -57,6 +76,9 @@ internal static class Program
         Console.Error.WriteLine("  --selftest <out.png>          Capture the current input desktop (run as SYSTEM to capture UAC/lock screen).");
         Console.Error.WriteLine("  --desktop-name                Print the name of the current input desktop.");
         Console.Error.WriteLine("  --probe-loop <log> [seconds]  Log capture results of the input desktop over time (no image saved).");
+        Console.Error.WriteLine("  --serve [pipe]                Serve input-desktop frames and accept input over a named pipe (run as SYSTEM).");
+        Console.Error.WriteLine("  --pullframe <out.png> [pipe]  Test client: pull one frame from a running --serve agent and save it.");
+        Console.Error.WriteLine("  --ping [pipe]                 Test client: connect and print the input-desktop name (no screenshot).");
         return 64;
     }
 

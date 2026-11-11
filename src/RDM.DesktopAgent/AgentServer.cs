@@ -23,6 +23,7 @@ internal static class AgentServer
     public static int Serve(string pipeName)
     {
         pipeName = string.IsNullOrEmpty(pipeName) ? DefaultPipe : pipeName;
+        StartSelfProbe();
         PipeSecurity security = null;
         try
         {
@@ -50,6 +51,39 @@ internal static class AgentServer
             var worker = new Thread(() => Handle(pipe)) { IsBackground = false, Name = "RDM.DesktopAgent.Client" };
             worker.Start();
         }
+    }
+
+    /// <summary>
+    /// Luồng tự kiểm chứng: mỗi 2s thử chụp input desktop và ghi tên desktop + OK/FAIL vào desktop-probe.log.
+    /// KHÔNG lưu ảnh. Để xác minh agent (SYSTEM) chụp được secure desktop (Winlogon) trong lúc UAC/khóa máy.
+    /// </summary>
+    private static void StartSelfProbe()
+    {
+        var log = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RDM", "desktop-probe.log");
+        var t = new Thread(() =>
+        {
+            while (true)
+            {
+                string line;
+                try
+                {
+                    using var bmp = DesktopCapture.CaptureInputDesktop(out var name);
+                    line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}  desktop={name}  result=OK {bmp.Width}x{bmp.Height}  user={Environment.UserName}";
+                }
+                catch (Exception ex)
+                {
+                    string name = null;
+                    try { name = DesktopCapture.InputDesktopName(); } catch (Exception) { }
+                    line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}  desktop={name}  result=FAILED  {ex.Message}  user={Environment.UserName}";
+                }
+                try { System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(log)); System.IO.File.AppendAllText(log, line + Environment.NewLine); }
+                catch (Exception) { }
+                Thread.Sleep(2000);
+            }
+        })
+        { IsBackground = true, Name = "RDM.DesktopAgent.Probe" };
+        t.Start();
     }
 
     private static void Handle(NamedPipeServerStream pipe)
